@@ -1,0 +1,3 @@
+export const SUELDO_MINIMO_2026             = 539000
+export const SUELDO_MINIMO_MENOR_18         = 402082
+export const SUELDO_MINIMO_NO_REMUNERACIONAL = 347434
