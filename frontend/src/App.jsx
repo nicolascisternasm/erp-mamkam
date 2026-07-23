@@ -30,6 +30,7 @@ import VisitasPage from './modules/visitas/VisitasPage'
 import ProductosPage from './modules/productos/ProductosPage'
 import PlanificacionPage from './modules/proyectos/PlanificacionPage'
 import ProveedoresPage from './modules/proveedores/ProveedoresPage'
+import CRMPage from './modules/crm/CRMPage'
 
 export default function App() {
   return (
@@ -168,6 +169,15 @@ export default function App() {
                 element={
                   <ProtectedRoute permission="puede_planificacion">
                     <PlanificacionPage />
+                  </ProtectedRoute>
+                }
+              />
+
+              <Route
+                path="/crm"
+                element={
+                  <ProtectedRoute roles={['admin']}>
+                    <CRMPage />
                   </ProtectedRoute>
                 }
               />

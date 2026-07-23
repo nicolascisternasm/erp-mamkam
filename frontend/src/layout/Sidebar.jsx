@@ -1,7 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, FileText, ShoppingCart, Users, FolderOpen,
-  Wallet, Settings, LogOut, Zap, ChevronRight, X, ClipboardList, FolderKanban, Bot, Calculator, Package, CalendarDays, Building2,
+  Wallet, Settings, LogOut, Zap, ChevronRight, X, ClipboardList, FolderKanban, Bot, Calculator, Package, CalendarDays, Building2, Users2,
 } from 'lucide-react'
 import { useAuth } from '../modules/auth/AuthContext'
 
@@ -30,6 +30,7 @@ const NAV = [
       { to: '/planificacion', icon: CalendarDays, label: 'Planificación', permission: 'puede_planificacion' },
       { to: '/visitas',       icon: ClipboardList, label: 'Visitas',      permission: 'puede_visitas' },
       { to: '/productos',     icon: Package,      label: 'Productos',     permission: 'puede_productos' },
+      { to: '/crm',           icon: Users2,       label: 'CRM',           adminOnly: true },
     ],
   },
   {
