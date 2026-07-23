@@ -1,6 +1,7 @@
-import { useState, useMemo, useRef } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { useApp } from '../../context/AppContext'
 import { useAuth } from '../auth/AuthContext'
+import { apiClient } from '../../services/apiClient'
 import { formatDate } from '../../utils/formatters'
 import Modal, { ConfirmModal } from '../../components/Modal'
 import Toast from '../../components/Toast'
@@ -10,6 +11,7 @@ import {
   KeyRound, CheckCircle2, XCircle, Clock, Phone,
   Eye, ExternalLink, Download, RefreshCw,
   Building2, Users, ArrowLeft, Settings, Plus, Pencil, Check, X, ChevronRight,
+  AlertTriangle, Sparkles, Image as ImageIcon,
 } from 'lucide-react'
 
 /* ── Tipos de documento ─────────────────────────────────────── */
@@ -961,6 +963,508 @@ function DocumentosTab() {
   )
 }
 
+/* ── Amonestaciones tab ─────────────────────────────────────── */
+
+const GRAVEDAD_META = {
+  leve:      { label: 'Leve',       color: 'bg-amber-100 text-amber-700' },
+  grave:     { label: 'Grave',      color: 'bg-orange-100 text-orange-700' },
+  muy_grave: { label: 'Muy grave',  color: 'bg-red-100 text-red-700' },
+}
+
+const ESTADO_META = {
+  activa:    { label: 'Activa',    color: 'bg-emerald-100 text-emerald-700' },
+  anulada:   { label: 'Anulada',   color: 'bg-slate-100 text-slate-500' },
+}
+
+/* Lee un File como dataURL (para incrustar la foto en el PDF) */
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result)
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
+}
+
+/* Construye el PDF de la amonestación con jsPDF */
+async function construirPdf({ empresaNombre, trabajadorNombre, fecha, codigo, analisis, fotoDataUrl }) {
+  const { default: jsPDF } = await import('jspdf')
+  const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+
+  const pageW = pdf.internal.pageSize.getWidth()
+  const marginX = 20
+  const maxW = pageW - marginX * 2
+  let y = 22
+
+  const ensureSpace = (needed) => {
+    if (y + needed > 280) { pdf.addPage(); y = 22 }
+  }
+
+  const heading = (text) => {
+    ensureSpace(10)
+    pdf.setFont('helvetica', 'bold')
+    pdf.setFontSize(11)
+    pdf.setTextColor(30, 41, 59)
+    pdf.text(text, marginX, y)
+    y += 6
+  }
+
+  const paragraph = (text) => {
+    pdf.setFont('helvetica', 'normal')
+    pdf.setFontSize(10)
+    pdf.setTextColor(51, 65, 85)
+    const lines = pdf.splitTextToSize(text || '—', maxW)
+    lines.forEach((line) => {
+      ensureSpace(6)
+      pdf.text(line, marginX, y)
+      y += 5.2
+    })
+    y += 3
+  }
+
+  // Título
+  pdf.setFont('helvetica', 'bold')
+  pdf.setFontSize(16)
+  pdf.setTextColor(15, 23, 42)
+  pdf.text('AMONESTACIÓN ESCRITA', pageW / 2, y, { align: 'center' })
+  y += 8
+  pdf.setFontSize(11)
+  pdf.setTextColor(100, 116, 139)
+  pdf.text(`Código: ${codigo}`, pageW / 2, y, { align: 'center' })
+  y += 6
+  pdf.setDrawColor(203, 213, 225)
+  pdf.line(marginX, y, pageW - marginX, y)
+  y += 8
+
+  // Datos generales
+  pdf.setFont('helvetica', 'normal')
+  pdf.setFontSize(10)
+  pdf.setTextColor(51, 65, 85)
+  pdf.text(`Empresa: ${empresaNombre || '—'}`, marginX, y);        y += 6
+  pdf.text(`Trabajador: ${trabajadorNombre || '—'}`, marginX, y);  y += 6
+  pdf.text(`Fecha: ${fecha || '—'}`, marginX, y);                  y += 10
+
+  heading('DESCRIPCIÓN DE LA FALTA')
+  paragraph(analisis.descripcion_formal)
+
+  heading('INFRACCIÓN AL REGLAMENTO INTERNO')
+  paragraph(`${analisis.articulo || '—'}${analisis.titulo ? ` - ${analisis.titulo}` : ''}`)
+  if (analisis.pagina) paragraph(`Página ${analisis.pagina} del Reglamento Interno`)
+
+  heading('TEXTO DEL REGLAMENTO INFRINGIDO')
+  paragraph(`"${analisis.cita_reglamento || '—'}"`)
+
+  heading('GRAVEDAD')
+  paragraph(GRAVEDAD_META[analisis.gravedad]?.label || analisis.gravedad || '—')
+
+  // Foto de respaldo
+  if (fotoDataUrl) {
+    ensureSpace(70)
+    heading('RESPALDO')
+    try {
+      const fmt = fotoDataUrl.startsWith('data:image/png') ? 'PNG' : 'JPEG'
+      pdf.addImage(fotoDataUrl, fmt, marginX, y, 80, 60)
+      y += 66
+    } catch { /* formato de imagen no soportado por jsPDF */ }
+  }
+
+  // Firma
+  ensureSpace(24)
+  y += 6
+  pdf.setDrawColor(100, 116, 139)
+  pdf.line(marginX, y, marginX + 70, y)
+  y += 5
+  pdf.setFont('helvetica', 'normal')
+  pdf.setFontSize(9)
+  pdf.setTextColor(100, 116, 139)
+  pdf.text('Firma trabajador', marginX, y)
+
+  return pdf.output('blob')
+}
+
+function AmonestacionesTab() {
+  const { trabajadores, documentos } = useApp()
+  const { user } = useAuth()
+  const isAdmin = user?.rol === 'admin'
+
+  const [vista, setVista]       = useState('lista')   // 'lista' | 'nueva' | 'detalle'
+  const [lista, setLista]       = useState([])
+  const [loading, setLoading]   = useState(true)
+  const [detalle, setDetalle]   = useState(null)
+  const [toast, setToast]       = useState(null)
+
+  // Formulario nueva amonestación
+  const fotoRef = useRef(null)
+  const [formTrabajador, setFormTrabajador] = useState('')
+  const [formFecha, setFormFecha]           = useState(() => new Date().toISOString().split('T')[0])
+  const [formDescripcion, setFormDescripcion] = useState('')
+  const [formFoto, setFormFoto]             = useState(null)
+  const [generando, setGenerando]           = useState(false)
+
+  const showToast = (type, msg) => {
+    setToast({ type, msg })
+    setTimeout(() => setToast(null), 4000)
+  }
+
+  const cargar = async () => {
+    setLoading(true)
+    try {
+      const data = await apiClient.get('/amonestaciones')
+      setLista(data || [])
+    } catch (err) {
+      showToast('error', `No se pudieron cargar las amonestaciones: ${err.message}`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { cargar() }, [])
+
+  const reglamento = useMemo(
+    () => documentos.find((d) => d.tipo === 'reglamento' && !d.trabajadorId),
+    [documentos],
+  )
+  const urlReglamento = reglamento?.url || reglamento?.urlExterna || null
+
+  const getTrabajadorNombre = (id) =>
+    trabajadores.find((t) => t.id === id)?.nombre || '—'
+
+  const resetForm = () => {
+    setFormTrabajador(''); setFormFecha(new Date().toISOString().split('T')[0])
+    setFormDescripcion(''); setFormFoto(null)
+  }
+
+  const handleGenerar = async () => {
+    if (!formTrabajador) { showToast('error', 'Selecciona un trabajador'); return }
+    if (!formDescripcion.trim()) { showToast('error', 'Describe el hecho ocurrido'); return }
+    if (!urlReglamento) {
+      showToast('error', 'No hay un reglamento interno cargado. Súbelo en Documentos de Empresa.')
+      return
+    }
+
+    const trabajador = trabajadores.find((t) => t.id === formTrabajador)
+    setGenerando(true)
+    try {
+      // 1) Análisis IA + código correlativo (backend)
+      const analisis = await apiClient.post('/amonestaciones/generar', {
+        descripcion_admin: formDescripcion.trim(),
+        url_reglamento:    urlReglamento,
+        trabajador_nombre: trabajador?.nombre ?? '',
+        fecha:             formFecha,
+      })
+
+      // 2) Foto de respaldo (opcional) → dataURL + Storage
+      let fotoDataUrl = null
+      let fotoUrl = null
+      if (formFoto) {
+        fotoDataUrl = await fileToDataUrl(formFoto)
+        const fotoPath = `amonestaciones/${user.empresa_id}/${analisis.codigo}_foto_${formFoto.name.replace(/\s/g, '_')}`
+        const { error: upErr } = await supabase.storage
+          .from('documentos')
+          .upload(fotoPath, formFoto, { upsert: false, contentType: formFoto.type })
+        if (!upErr) {
+          fotoUrl = supabase.storage.from('documentos').getPublicUrl(fotoPath).data.publicUrl
+        }
+      }
+
+      // 3) Generar el PDF y subirlo a Storage
+      const pdfBlob = await construirPdf({
+        empresaNombre:    user?.empresa?.nombre ?? '',
+        trabajadorNombre: trabajador?.nombre ?? '',
+        fecha:            formFecha,
+        codigo:           analisis.codigo,
+        analisis,
+        fotoDataUrl,
+      })
+      const pdfPath = `amonestaciones/${user.empresa_id}/${analisis.codigo}.pdf`
+      const { error: pdfErr } = await supabase.storage
+        .from('documentos')
+        .upload(pdfPath, pdfBlob, { upsert: true, contentType: 'application/pdf' })
+      if (pdfErr) throw pdfErr
+      const pdfUrl = supabase.storage.from('documentos').getPublicUrl(pdfPath).data.publicUrl
+
+      // 4) Insertar la amonestación
+      const registro = {
+        empresa_id:          user.empresa_id,
+        trabajador_id:       formTrabajador,
+        trabajador_nombre:   trabajador?.nombre ?? '',
+        codigo:              analisis.codigo,
+        fecha:               formFecha,
+        descripcion_admin:   formDescripcion.trim(),
+        descripcion_ia:      analisis.descripcion_formal,
+        articulo_reglamento: analisis.articulo,
+        titulo_reglamento:   analisis.titulo,
+        pagina_reglamento:   analisis.pagina,
+        foto_url:            fotoUrl,
+        pdf_url:             pdfUrl,
+        estado:              'activa',
+      }
+      const { error: insErr } = await supabase.from('amonestaciones').insert(registro)
+      if (insErr) throw insErr
+
+      // 5) Registrar también en documentos del trabajador (best-effort)
+      supabase.from('documentos').insert({
+        empresa_id:    user.empresa_id,
+        trabajador_id: formTrabajador,
+        tipo:          'amonestacion',
+        nombre:        `Amonestación ${analisis.codigo}`,
+        fecha:         formFecha,
+        url:           pdfUrl,
+        url_externa:   null,
+        tamano:        null,
+      }).then(({ error }) => {
+        if (error) console.warn('[amonestaciones] no se pudo registrar en documentos:', error.message)
+      })
+
+      showToast('success', `Amonestación ${analisis.codigo} generada`)
+      resetForm()
+      await cargar()
+      const creada = { ...analisis, pdfUrl, trabajadorNombre: trabajador?.nombre ?? '', fecha: formFecha }
+      setDetalle(creada)
+      setVista('detalle')
+    } catch (err) {
+      showToast('error', `Error al generar: ${err.message}`)
+    } finally {
+      setGenerando(false)
+    }
+  }
+
+  /* ── Vista: detalle ───────────────────────────────────────── */
+  if (vista === 'detalle' && detalle) {
+    const grav = GRAVEDAD_META[detalle.gravedad] || GRAVEDAD_META.leve
+    return (
+      <div className="space-y-5">
+        <div className="flex items-center gap-3">
+          <button onClick={() => { setDetalle(null); setVista('lista') }} className="btn-secondary text-sm">
+            <ArrowLeft className="w-4 h-4" /> Volver
+          </button>
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5 text-orange-500" />
+            <div>
+              <h3 className="text-base font-semibold text-slate-900">{detalle.codigo}</h3>
+              <p className="text-xs text-slate-500">{detalle.trabajadorNombre} · {formatDate(detalle.fecha)}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="card p-5 space-y-4 max-w-2xl">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${grav.color}`}>
+              Gravedad: {grav.label}
+            </span>
+          </div>
+          <div>
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">Descripción de la falta</p>
+            <p className="text-sm text-slate-700 whitespace-pre-line">{detalle.descripcion_formal || detalle.descripcionIa}</p>
+          </div>
+          <div>
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">Infracción</p>
+            <p className="text-sm text-slate-700">
+              {detalle.articulo}{detalle.titulo ? ` — ${detalle.titulo}` : ''}
+              {detalle.pagina ? ` · Página ${detalle.pagina}` : ''}
+            </p>
+          </div>
+          {detalle.cita_reglamento && (
+            <div>
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">Texto del reglamento</p>
+              <p className="text-sm text-slate-600 italic border-l-2 border-slate-200 pl-3">“{detalle.cita_reglamento}”</p>
+            </div>
+          )}
+          {detalle.pdfUrl && (
+            <a href={detalle.pdfUrl} download target="_blank" rel="noreferrer" className="btn-primary text-sm inline-flex">
+              <Download className="w-4 h-4" /> Descargar PDF
+            </a>
+          )}
+        </div>
+        <Toast toast={toast} onDismiss={() => setToast(null)} />
+      </div>
+    )
+  }
+
+  /* ── Vista: nueva ─────────────────────────────────────────── */
+  if (vista === 'nueva') {
+    return (
+      <div className="space-y-5">
+        <div className="flex items-center gap-3">
+          <button onClick={() => { resetForm(); setVista('lista') }} className="btn-secondary text-sm">
+            <ArrowLeft className="w-4 h-4" /> Volver
+          </button>
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-indigo-500" />
+            <h3 className="text-base font-semibold text-slate-900">Nueva amonestación</h3>
+          </div>
+        </div>
+
+        {!urlReglamento && (
+          <div className="flex gap-2.5 bg-amber-50 border border-amber-200 rounded-lg px-3.5 py-3 max-w-2xl">
+            <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+            <p className="text-sm text-amber-800">
+              No hay un <strong>Reglamento interno</strong> cargado como documento de empresa.
+              Súbelo en la pestaña Documentos antes de generar una amonestación.
+            </p>
+          </div>
+        )}
+
+        <div className="card p-5 space-y-4 max-w-2xl">
+          <div>
+            <label className="label-base">Trabajador</label>
+            <select
+              value={formTrabajador}
+              onChange={(e) => setFormTrabajador(e.target.value)}
+              className="input-base text-sm"
+            >
+              <option value="">— Selecciona —</option>
+              {trabajadores.filter((t) => t.estado === 'activo').map((t) => (
+                <option key={t.id} value={t.id}>{t.nombre}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="label-base">Fecha</label>
+            <input
+              type="date"
+              value={formFecha}
+              onChange={(e) => setFormFecha(e.target.value)}
+              className="input-base text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="label-base">Descripción del hecho</label>
+            <textarea
+              value={formDescripcion}
+              onChange={(e) => setFormDescripcion(e.target.value)}
+              rows={5}
+              placeholder="Describe libremente lo que ocurrió. La IA lo reescribirá de forma formal y buscará el artículo del reglamento infringido."
+              className="input-base text-sm resize-y"
+            />
+          </div>
+
+          <div>
+            <label className="label-base">Foto de respaldo (opcional)</label>
+            <input
+              ref={fotoRef}
+              type="file"
+              accept=".jpg,.jpeg,.png"
+              className="hidden"
+              onChange={(e) => setFormFoto(e.target.files?.[0] ?? null)}
+            />
+            <button
+              type="button"
+              onClick={() => fotoRef.current?.click()}
+              className="btn-secondary w-full justify-center py-2.5 border-dashed text-sm"
+            >
+              <ImageIcon className="w-4 h-4" />
+              {formFoto ? formFoto.name : 'Seleccionar imagen'}
+            </button>
+          </div>
+
+          <button
+            onClick={handleGenerar}
+            disabled={generando || !urlReglamento}
+            className="btn-primary w-full justify-center disabled:opacity-50"
+          >
+            {generando
+              ? <><RefreshCw className="w-4 h-4 animate-spin" /><span>Generando con IA...</span></>
+              : <><Sparkles className="w-4 h-4" /><span>Generar Amonestación con IA</span></>
+            }
+          </button>
+        </div>
+
+        <Toast toast={toast} onDismiss={() => setToast(null)} />
+      </div>
+    )
+  }
+
+  /* ── Vista: lista ─────────────────────────────────────────── */
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-slate-500">{lista.length} amonestación{lista.length === 1 ? '' : 'es'}</p>
+        {isAdmin && (
+          <button onClick={() => setVista('nueva')} className="btn-primary text-sm">
+            <Plus className="w-4 h-4" /> Nueva Amonestación
+          </button>
+        )}
+      </div>
+
+      <div className="card overflow-hidden">
+        {loading ? (
+          <div className="flex items-center justify-center py-16">
+            <RefreshCw className="w-6 h-6 text-slate-300 animate-spin" />
+          </div>
+        ) : lista.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <AlertTriangle className="w-10 h-10 text-slate-300 mb-3" />
+            <p className="text-sm font-medium text-slate-500">Sin amonestaciones</p>
+            <p className="text-xs text-slate-400 mt-1">
+              {isAdmin ? 'Crea la primera con el botón “Nueva Amonestación”.' : 'Aún no hay amonestaciones registradas.'}
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200">
+                  <th className="table-th">Código</th>
+                  <th className="table-th">Trabajador</th>
+                  <th className="table-th">Fecha</th>
+                  <th className="table-th">Artículo</th>
+                  <th className="table-th">Estado</th>
+                  <th className="table-th text-center">Acciones</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {lista.map((a) => {
+                  const estado = ESTADO_META[a.estado] || ESTADO_META.activa
+                  return (
+                    <tr
+                      key={a.id}
+                      onClick={() => { setDetalle({ ...a, descripcion_formal: a.descripcionIa, cita_reglamento: a.citaReglamento }); setVista('detalle') }}
+                      className="hover:bg-slate-50/80 transition-colors cursor-pointer"
+                    >
+                      <td className="table-td text-xs font-mono font-medium text-slate-700">{a.codigo}</td>
+                      <td className="table-td text-sm text-slate-800">{a.trabajadorNombre || getTrabajadorNombre(a.trabajadorId)}</td>
+                      <td className="table-td text-xs text-slate-500">{formatDate(a.fecha)}</td>
+                      <td className="table-td text-xs text-slate-500">{a.articulo || '—'}</td>
+                      <td className="table-td">
+                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${estado.color}`}>
+                          {estado.label}
+                        </span>
+                      </td>
+                      <td className="table-td">
+                        <div className="flex items-center justify-center gap-1" onClick={(e) => e.stopPropagation()}>
+                          {a.pdfUrl ? (
+                            <a
+                              href={a.pdfUrl}
+                              download
+                              target="_blank"
+                              rel="noreferrer"
+                              className="btn-ghost p-1.5 text-slate-400 hover:text-slate-700"
+                              title="Descargar PDF"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                            </a>
+                          ) : (
+                            <span className="p-1.5 text-slate-200" title="Sin PDF"><Download className="w-3.5 h-3.5" /></span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <Toast toast={toast} onDismiss={() => setToast(null)} />
+    </div>
+  )
+}
+
 /* ── Página principal ───────────────────────────────────────── */
 
 export default function RRHHPage() {
@@ -969,16 +1473,19 @@ export default function RRHHPage() {
 
   const pendientes = solicitudesPassword.filter((s) => s.estado === 'pendiente').length
 
+  const subtitulo =
+    tab === 'documentos'
+      ? `${documentos.length} documentos en total`
+      : tab === 'amonestaciones'
+        ? 'Amonestaciones generadas con IA'
+        : `${pendientes} solicitud${pendientes === 1 ? '' : 'es'} pendiente${pendientes === 1 ? '' : 's'}`
+
   return (
     <div className="space-y-5 w-full">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-slate-900">Recursos Humanos</h2>
-          <p className="text-sm text-slate-500 mt-0.5">
-            {tab === 'documentos'
-              ? `${documentos.length} documentos en total`
-              : `${pendientes} solicitud${pendientes === 1 ? '' : 'es'} pendiente${pendientes === 1 ? '' : 's'}`}
-          </p>
+          <p className="text-sm text-slate-500 mt-0.5">{subtitulo}</p>
         </div>
       </div>
 
@@ -991,6 +1498,15 @@ export default function RRHHPage() {
         >
           <FolderOpen className="w-4 h-4" />
           Documentos
+        </button>
+        <button
+          onClick={() => setTab('amonestaciones')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            tab === 'amonestaciones' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <AlertTriangle className="w-4 h-4" />
+          Amonestaciones
         </button>
         <button
           onClick={() => setTab('passwords')}
@@ -1008,8 +1524,9 @@ export default function RRHHPage() {
         </button>
       </div>
 
-      {tab === 'documentos' && <DocumentosTab />}
-      {tab === 'passwords'  && <PasswordsTab />}
+      {tab === 'documentos'     && <DocumentosTab />}
+      {tab === 'amonestaciones' && <AmonestacionesTab />}
+      {tab === 'passwords'      && <PasswordsTab />}
     </div>
   )
 }

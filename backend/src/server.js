@@ -28,6 +28,7 @@ const comprasRoutes          = require('./routes/compras.js')
 const cotizacionesRoutes     = require('./routes/cotizaciones.js')
 const recordatoriosRoutes    = require('./routes/recordatorios.js')
 const movContablesRoutes     = require('./routes/movimientosContables')
+const amonestacionesRoutes   = require('./routes/amonestaciones.js')
 
 const app = express()
 const PORT = process.env.PORT || 4000
@@ -63,6 +64,7 @@ app.use('/api/compras',      comprasRoutes)
 app.use('/api/cotizaciones',  cotizacionesRoutes)
 app.use('/api/recordatorios',         recordatoriosRoutes)
 app.use('/api/movimientos-contables', movContablesRoutes)
+app.use('/api/amonestaciones',        amonestacionesRoutes)
 
 app.use((req, res, next) => {
   res.status(404).json({ error: `Ruta no encontrada: ${req.method} ${req.path}` })
