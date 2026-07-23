@@ -46,3 +46,17 @@ jobs:
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./backend/src/
           server-dir: /nodeapps/erp-api/src/
+
+      # Regenera restart.txt con contenido único cada run, para que el FTP lo
+      # detecte como cambiado y Passenger reinicie Node en cada deploy.
+      - name: Update restart trigger
+        run: echo "restart $(date -u +%Y-%m-%dT%H:%M:%SZ) ${GITHUB_SHA}" > ./backend/tmp/restart.txt
+
+      - name: Restart Node.js app
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+        with:
+          server: ${{ secrets.FTP_HOST }}
+          username: ${{ secrets.FTP_USER }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./backend/tmp/
+          server-dir: /nodeapps/erp-api/tmp/

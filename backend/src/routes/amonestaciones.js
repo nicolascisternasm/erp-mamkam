@@ -3,6 +3,18 @@ const { requireAuth } = require('../middleware/auth.js')
 const supabase = require('../lib/supabase.js')
 
 const router = Router()
+
+/* ── Diagnóstico TEMPORAL (sin auth) ────────────────────────────
+ * Definida ANTES de router.use(requireAuth) para que quede pública.
+ * Eliminar una vez confirmado el estado de la API key en producción. */
+router.get('/diagnostico', (req, res) => {
+  res.json({
+    apiKey:       !!process.env.ANTHROPIC_API_KEY,
+    apiKeyLength: process.env.ANTHROPIC_API_KEY?.length || 0,
+    nodeVersion:  process.version,
+  })
+})
+
 router.use(requireAuth)
 
 /* ── Mapper snake_case → camelCase ──────────────────────────── */
@@ -68,6 +80,7 @@ router.get('/', async (req, res) => {
 /* ── POST /api/amonestaciones/generar ───────────────────────── */
 
 router.post('/generar', async (req, res) => {
+ try {
   console.log('[amonestaciones] API key disponible:', !!process.env.ANTHROPIC_API_KEY)
 
   const empresaId = req.user.empresa_id
@@ -83,6 +96,9 @@ router.post('/generar', async (req, res) => {
     return res.status(400).json({ success: false, error: { message: 'No hay un reglamento interno cargado para la empresa' } })
   }
 
+  // Paso 1: URL del reglamento recibida
+  console.log('[amonestaciones/generar] Paso 1 — url_reglamento recibida:', url_reglamento)
+
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) {
     console.error('[amonestaciones/generar] ANTHROPIC_API_KEY no configurada')
@@ -92,10 +108,12 @@ router.post('/generar', async (req, res) => {
   /* 1) Descargar el reglamento y convertirlo a base64 */
   let pdfBase64
   try {
+    console.log('[amonestaciones/generar] Paso 2 — Descargando PDF...')
     const pdfRes = await fetch(url_reglamento)
     if (!pdfRes.ok) throw new Error(`status ${pdfRes.status}`)
     const arrayBuf = await pdfRes.arrayBuffer()
     pdfBase64 = Buffer.from(arrayBuf).toString('base64')
+    console.log('[amonestaciones/generar] Paso 3 — PDF descargado. bytes:', arrayBuf.byteLength, '| base64 length:', pdfBase64.length)
   } catch (err) {
     console.error('[amonestaciones/generar] Error al descargar reglamento:', err.message)
     return res.status(400).json({ success: false, error: { message: 'No se pudo descargar el PDF del reglamento' } })
@@ -125,6 +143,9 @@ router.post('/generar', async (req, res) => {
       },
     ],
   }
+
+  // Paso 4: a punto de llamar a la IA
+  console.log('[amonestaciones/generar] Paso 4 — Llamando a Claude...', '| modelo:', requestBody.model)
 
   let anthropicRes
   try {
@@ -211,6 +232,14 @@ router.post('/generar', async (req, res) => {
       codigo,
     },
   })
+ } catch (fatalError) {
+    console.error('[amonestaciones] ERROR FATAL:', fatalError.message)
+    console.error('[amonestaciones] STACK:', fatalError.stack)
+    return res.status(500).json({
+      success: false,
+      error: { message: 'Error interno: ' + fatalError.message },
+    })
+ }
 })
 
 module.exports = router
