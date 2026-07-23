@@ -1202,19 +1202,9 @@ function AmonestacionesTab() {
       const { error: insErr } = await supabase.from('amonestaciones').insert(registro)
       if (insErr) throw insErr
 
-      // 5) Registrar también en documentos del trabajador (best-effort)
-      supabase.from('documentos').insert({
-        empresa_id:    user.empresa_id,
-        trabajador_id: formTrabajador,
-        tipo:          'amonestacion',
-        nombre:        `Amonestación ${analisis.codigo}`,
-        fecha:         formFecha,
-        url:           pdfUrl,
-        url_externa:   null,
-        tamano:        null,
-      }).then(({ error }) => {
-        if (error) console.warn('[amonestaciones] no se pudo registrar en documentos:', error.message)
-      })
+      // 5) El registro espejo en la tabla `documentos` se omite: la política RLS
+      //    del bucket/tabla lo rechaza. La amonestación queda guardada en su
+      //    propia tabla y el PDF disponible en Storage.
 
       showToast('success', `Amonestación ${analisis.codigo} generada`)
       resetForm()
