@@ -68,6 +68,8 @@ router.get('/', async (req, res) => {
 /* ── POST /api/amonestaciones/generar ───────────────────────── */
 
 router.post('/generar', async (req, res) => {
+  console.log('[amonestaciones] API key disponible:', !!process.env.ANTHROPIC_API_KEY)
+
   const empresaId = req.user.empresa_id
   if (!empresaId) {
     return res.status(400).json({ success: false, error: { message: 'Usuario sin empresa asociada' } })
@@ -136,17 +138,31 @@ router.post('/generar', async (req, res) => {
       body: JSON.stringify(requestBody),
     })
   } catch (networkErr) {
-    console.error('[amonestaciones/generar] Error de red con Anthropic:', networkErr.message)
+    console.error('[amonestaciones/generar] ❌ Error de red al llamar a Anthropic')
+    console.error('  modelo:', requestBody.model, '| tamaño PDF (base64):', pdfBase64.length)
+    console.error('  message:', networkErr.message)
+    console.error('  stack:', networkErr.stack)
     return res.status(502).json({ success: false, error: { message: 'No se pudo contactar el servicio de IA' } })
   }
 
   if (!anthropicRes.ok) {
     const errText = await anthropicRes.text()
-    console.error('[amonestaciones/generar] Anthropic error', anthropicRes.status, errText)
+    console.error('[amonestaciones/generar] ❌ Anthropic devolvió un error')
+    console.error('  status:', anthropicRes.status, anthropicRes.statusText)
+    console.error('  request-id:', anthropicRes.headers.get('request-id'))
+    console.error('  retry-after:', anthropicRes.headers.get('retry-after'))
+    console.error('  modelo:', requestBody.model, '| tamaño PDF (base64):', pdfBase64.length)
+    console.error('  body:', errText)
+    try {
+      const errJson = JSON.parse(errText)
+      console.error('  error.type:', errJson?.error?.type)
+      console.error('  error.message:', errJson?.error?.message)
+    } catch { /* el body no era JSON */ }
     return res.status(502).json({ success: false, error: { message: 'El servicio de IA devolvió un error' } })
   }
 
   const json = await anthropicRes.json()
+  console.log('[amonestaciones/generar] Anthropic stop_reason:', json.stop_reason)
   const content = (json.content || [])
     .filter((b) => b?.type === 'text' && typeof b.text === 'string')
     .map((b) => b.text)
