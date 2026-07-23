@@ -3,18 +3,6 @@ const { requireAuth } = require('../middleware/auth.js')
 const supabase = require('../lib/supabase.js')
 
 const router = Router()
-
-/* ── Diagnóstico TEMPORAL (sin auth) ────────────────────────────
- * Definida ANTES de router.use(requireAuth) para que quede pública.
- * Eliminar una vez confirmado el estado de la API key en producción. */
-router.get('/diagnostico', (req, res) => {
-  res.json({
-    apiKey:       !!process.env.ANTHROPIC_API_KEY,
-    apiKeyLength: process.env.ANTHROPIC_API_KEY?.length || 0,
-    nodeVersion:  process.version,
-  })
-})
-
 router.use(requireAuth)
 
 /* ── Mapper snake_case → camelCase ──────────────────────────── */
