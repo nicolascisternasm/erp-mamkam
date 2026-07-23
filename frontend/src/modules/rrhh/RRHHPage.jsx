@@ -1122,6 +1122,7 @@ function AmonestacionesTab() {
   const [loading, setLoading]   = useState(true)
   const [detalle, setDetalle]   = useState(null)
   const [toast, setToast]       = useState(null)
+  const [deleteTarget, setDeleteTarget] = useState(null)
 
   // Formulario nueva amonestación
   const fotoRef = useRef(null)
@@ -1248,6 +1249,38 @@ function AmonestacionesTab() {
       showToast('error', `Error al generar: ${err.message}`)
     } finally {
       setGenerando(false)
+    }
+  }
+
+  /* Extrae el path dentro del bucket `documentos` desde una URL pública */
+  const storagePathFromUrl = (url) => {
+    if (!url) return null
+    const marker = '/storage/v1/object/public/documentos/'
+    const idx = url.indexOf(marker)
+    if (idx < 0) return null
+    return decodeURIComponent(url.slice(idx + marker.length))
+  }
+
+  const handleDelete = async () => {
+    const target = deleteTarget
+    if (!target) return
+    setDeleteTarget(null)
+    try {
+      // 1) Eliminar el registro de la tabla amonestaciones
+      const { error: delErr } = await supabase.from('amonestaciones').delete().eq('id', target.id)
+      if (delErr) throw delErr
+
+      // 2-3) Eliminar el PDF y la foto de Storage (best-effort)
+      const paths = [storagePathFromUrl(target.pdfUrl), storagePathFromUrl(target.fotoUrl)].filter(Boolean)
+      if (paths.length) {
+        supabase.storage.from('documentos').remove(paths).catch(() => {})
+      }
+
+      // 4) Actualizar la lista localmente
+      setLista((prev) => prev.filter((a) => a.id !== target.id))
+      showToast('success', `Amonestación ${target.codigo} eliminada`)
+    } catch (err) {
+      showToast('error', `No se pudo eliminar: ${err.message}`)
     }
   }
 
@@ -1471,6 +1504,15 @@ function AmonestacionesTab() {
                           ) : (
                             <span className="p-1.5 text-slate-200" title="Sin PDF"><Download className="w-3.5 h-3.5" /></span>
                           )}
+                          {isAdmin && (
+                            <button
+                              onClick={() => setDeleteTarget(a)}
+                              className="btn-ghost p-1.5 text-red-400 hover:text-red-600"
+                              title="Eliminar"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1483,6 +1525,14 @@ function AmonestacionesTab() {
       </div>
 
       <Toast toast={toast} onDismiss={() => setToast(null)} />
+
+      <ConfirmModal
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleDelete}
+        title="Eliminar amonestación"
+        message={`¿Eliminar amonestación ${deleteTarget?.codigo}? Esta acción no se puede deshacer.`}
+      />
     </div>
   )
 }
