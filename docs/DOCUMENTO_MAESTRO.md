@@ -1,6 +1,6 @@
 # DOCUMENTO MAESTRO — ERP MAMKAM
-**Versión:** 1.3.0  
-**Fecha:** 2026-05-23  
+**Versión:** 1.6.0  
+**Fecha:** 2026-07-23  
 **Estado:** Documento Vivo — sujeto a revisiones controladas  
 **Clasificación:** Interno / Confidencial
 
@@ -22,6 +22,7 @@
 12. [Frontend y Backend](#12-frontend-y-backend)
 13. [Escalabilidad](#13-escalabilidad)
 14. [Glosario](#14-glosario)
+15. [Infraestructura y Deploy](#infraestructura-y-deploy)
 
 ---
 
@@ -82,7 +83,7 @@ ERP MAMKAM
 
 ## 2. ESTADO DE IMPLEMENTACIÓN
 
-> Esta sección refleja el estado real del código al **2026-05-23**. Los módulos marcados como ✅ están operativos. Los marcados como ⚠️ están parcialmente implementados. Los marcados como 🔲 son especificaciones planificadas aún no desarrolladas.
+> Esta sección refleja el estado real del código al **2026-07-23**. Los módulos marcados como ✅ están operativos. Los marcados como ⚠️ están parcialmente implementados. Los marcados como 🔲 son especificaciones planificadas aún no desarrolladas.
 
 ### 2.1 Estado por Módulo
 
@@ -92,7 +93,8 @@ ERP MAMKAM
 | **COT — Cotizaciones** | ✅ Operativo | CRUD completo, envío WA/email, PDF, estados, items |
 | **OC — Órdenes de Compra** | ✅ Operativo | CRUD básico, items, solo rol admin |
 | **TRB — Trabajadores** | ✅ Operativo | CRUD completo, datos personales y laborales |
-| **RRHH** | ⚠️ Parcial | Página base existente, sin funcionalidades avanzadas |
+| **RRHH** | ✅ Operativo | Documentos empresa/trabajador, gestión de tipos, amonestaciones con IA |
+| **CRM** | ⚠️ Parcial | Tabla clientes, lista con filtros, webhook Meta Lead Ads (pendiente verificación) |
 | **FIN — Finanzas** | ⚠️ Parcial | Movimientos, conciliación manual, importación CSV, gastos con foto |
 | **Usuarios** | ⚠️ Parcial | Página existente, gestión básica |
 | **Configuración** | ⚠️ Parcial | Página existente, ajustes generales |
@@ -146,6 +148,24 @@ ERP MAMKAM
 - **Informe financiero**: por cobrar, cobrado, por pagar, pagado, saldo real, saldo proyectado
 - **Filtros**: por tipo (ingreso/egreso), por estado (pendiente/conciliado), búsqueda por descripción
 - **Categorías automáticas**: Venta (desde cotización), Pago OC, Gasto, Cartola, Manual
+
+#### RRHH ✅
+- Módulo Documentos con 2 cards: Empresa y Trabajadores
+- Separación por `trabajador_id IS NULL` (empresa) / `IS NOT NULL` (trabajador)
+- Gestión de tipos de documento (solo admin) con localStorage
+- Módulo Amonestaciones con IA:
+  * Formulario: trabajador, fecha, descripción, foto opcional
+  * IA lee reglamento interno PDF y reescribe formalmente
+  * Identifica artículo, título y página del reglamento infringido
+  * Genera PDF con logo y nombre de empresa
+  * Código correlativo: `AMONEST-2026-001`
+  * Tabla `amonestaciones` en Supabase
+
+#### CRM ⚠️ (en desarrollo)
+- Tabla `clientes` en Supabase
+- Frontend: lista con filtros por estado, badges de color
+- Webhook Meta Lead Ads: `/api/crm/webhook` (pendiente verificación)
+- Variables requeridas: `META_VERIFY_TOKEN`, `META_PAGE_ACCESS_TOKEN`, `META_EMPRESA_ID`
 
 ---
 
@@ -922,6 +942,47 @@ COT ──→ CONT  (factura emitida genera asiento de venta / CxC)
 -- movimientos_bancarios: id, fecha, descripcion, tipo, monto, referencia, conciliado
 ```
 
+### 8.3.1 Tablas Nuevas Implementadas (v1.6)
+
+```sql
+-- AMONESTACIONES (módulo RRHH — generadas con IA sobre el reglamento interno)
+amonestaciones {
+  id                  UUID        PK
+  empresa_id          UUID
+  trabajador_id       UUID
+  codigo              VARCHAR     Correlativo AMONEST-YYYY-NNN
+  fecha               DATE
+  descripcion_admin   TEXT        Descripción libre del hecho (input del admin)
+  descripcion_ia      TEXT        Reescritura formal generada por la IA
+  articulo_reglamento VARCHAR     Artículo infringido
+  titulo_reglamento   VARCHAR     Título del artículo
+  pagina_reglamento   VARCHAR     Página del reglamento
+  foto_url            VARCHAR     Foto de respaldo (opcional, Storage)
+  pdf_url             VARCHAR     PDF generado (Storage)
+  estado              VARCHAR     'activa' | 'anulada'
+  created_at          TIMESTAMPTZ
+}
+
+-- CLIENTES (módulo CRM — leads de Meta y manuales)
+clientes {
+  id             UUID        PK
+  empresa_id     UUID
+  nombre         VARCHAR
+  email          VARCHAR
+  telefono       VARCHAR
+  mensaje        TEXT
+  fuente         VARCHAR     'meta_leads' | 'manual'
+  fuente_detalle VARCHAR     Nombre del formulario de Meta u origen
+  estado         VARCHAR     'nuevo' | 'contactado' | 'en_proceso' | 'cerrado' | 'perdido'
+  created_at     TIMESTAMPTZ
+  updated_at     TIMESTAMPTZ
+}
+```
+
+**Cambios a la tabla `gastos`:**
+- Columnas agregadas: `cuenta_contable_id`, `tipo_documento_id`
+- CHECK constraints eliminados: `gastos_categoria_check`, `gastos_tipo_documento_check`
+
 ### 8.4 Esquema Objetivo
 
 ```sql
@@ -1618,6 +1679,37 @@ CREATE POLICY tenant_isolation ON cotizaciones
 
 ---
 
+## INFRAESTRUCTURA Y DEPLOY
+
+### Repositorio
+- **GitHub:** [github.com/nicolascisternasm/erp-mamkam](https://github.com/nicolascisternasm/erp-mamkam)
+- Rama de producción: `master`
+
+### Deploy automático (GitHub Actions)
+Al hacer push a `master`, el workflow `.github/workflows/deploy.yml` ejecuta dos jobs en paralelo:
+
+| Job | Qué hace |
+|-----|----------|
+| **deploy-frontend** | `npm ci` + `vite build` → FTP de `frontend/dist/` a `/public_html/erp.mamkam/` |
+| **deploy-backend** | FTP de `backend/src/` a `/nodeapps/erp-api/src/` + reinicio de Node vía `tmp/restart.txt` |
+
+- El reinicio se dispara reescribiendo `backend/tmp/restart.txt` con contenido único cada run (timestamp + SHA), de modo que el FTP siempre lo detecta como cambiado y Passenger recarga el proceso Node.
+- **Nota:** el pipeline sube solo `backend/src/`; `package.json` y `node_modules` no se despliegan, por lo que instalar dependencias nuevas del backend requiere `npm install` manual en el servidor.
+
+### Variables de entorno del backend
+Ubicadas en `/nodeapps/erp-api/.env` (no versionadas):
+- `ANTHROPIC_API_KEY` — IA (OCR de boletas, amonestaciones)
+- `JWT_SECRET`, `JWT_EXPIRES_IN` — autenticación
+- `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` — acceso backend a Supabase
+- `META_VERIFY_TOKEN`, `META_PAGE_ACCESS_TOKEN`, `META_EMPRESA_ID` — webhook CRM Meta Lead Ads
+
+### Hosting (cPanel + Passenger)
+- Frontend (SPA React): `/public_html/erp.mamkam/`
+- Backend (Node.js/Express bajo Passenger): `/nodeapps/erp-api/`
+- **Fix de routing SPA:** el `.htaccess` del ERP usa `RewriteRule ^ index.html [QSA,END]`. El flag `END` (no `L`) evita que las reglas heredadas del sitio padre reprocesen la petición y redirijan al home, permitiendo el deep-linking en el subdirectorio.
+
+---
+
 ## DOCUMENTOS RELACIONADOS
 
 | Documento | Descripción |
@@ -1627,6 +1719,6 @@ CREATE POLICY tenant_isolation ON cotizaciones
 
 ---
 
-*Documento Maestro ERP MAMKAM — v1.3.0*  
-*Actualizado el 2026-05-23 para reflejar el estado real del código*  
-*Próxima revisión: al completar IAD o CONT*
+*Documento Maestro ERP MAMKAM — v1.6.0*  
+*Actualizado el 2026-07-23 para reflejar el estado real del código*  
+*Próxima revisión: al completar CRM (verificación webhook Meta) o IAD/CONT*
