@@ -986,8 +986,27 @@ function fileToDataUrl(file) {
   })
 }
 
+/* Descarga una URL (p.ej. el logo de la empresa) y la devuelve como dataURL.
+   Si algo falla (CORS, URL rota, red), devuelve null para no bloquear el PDF. */
+async function urlToDataUrl(url) {
+  if (!url) return null
+  try {
+    const res = await fetch(url)
+    if (!res.ok) return null
+    const blob = await res.blob()
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result)
+      reader.onerror = reject
+      reader.readAsDataURL(blob)
+    })
+  } catch {
+    return null
+  }
+}
+
 /* Construye el PDF de la amonestación con jsPDF */
-async function construirPdf({ empresaNombre, trabajadorNombre, fecha, codigo, analisis, fotoDataUrl }) {
+async function construirPdf({ empresaNombre, trabajadorNombre, fecha, codigo, analisis, fotoDataUrl, logoDataUrl }) {
   const { default: jsPDF } = await import('jspdf')
   const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
 
@@ -995,6 +1014,17 @@ async function construirPdf({ empresaNombre, trabajadorNombre, fecha, codigo, an
   const marginX = 20
   const maxW = pageW - marginX * 2
   let y = 22
+
+  // Logo de la empresa (centrado, antes del título). Si no está, se omite.
+  if (logoDataUrl) {
+    try {
+      const fmt = logoDataUrl.startsWith('data:image/png') ? 'PNG' : 'JPEG'
+      const logoW = 38
+      const logoH = 20
+      pdf.addImage(logoDataUrl, fmt, (pageW - logoW) / 2, y, logoW, logoH, undefined, 'FAST')
+      y += logoH + 6
+    } catch { /* formato de imagen no soportado por jsPDF */ }
+  }
 
   const ensureSpace = (needed) => {
     if (y + needed > 280) { pdf.addPage(); y = 22 }
@@ -1083,7 +1113,7 @@ async function construirPdf({ empresaNombre, trabajadorNombre, fecha, codigo, an
 }
 
 function AmonestacionesTab() {
-  const { trabajadores, documentos } = useApp()
+  const { trabajadores, documentos, empresa } = useApp()
   const { user } = useAuth()
   const isAdmin = user?.rol === 'admin'
 
@@ -1168,13 +1198,15 @@ function AmonestacionesTab() {
       }
 
       // 3) Generar el PDF y subirlo a Storage
+      const logoDataUrl = await urlToDataUrl(empresa?.logo_url)
       const pdfBlob = await construirPdf({
-        empresaNombre:    user?.empresa?.nombre ?? '',
+        empresaNombre:    empresa?.razon_social || empresa?.nombre || '',
         trabajadorNombre: trabajador?.nombre ?? '',
         fecha:            formFecha,
         codigo:           analisis.codigo,
         analisis,
         fotoDataUrl,
+        logoDataUrl,
       })
       const pdfPath = `amonestaciones/${user.empresa_id}/${analisis.codigo}.pdf`
       const { error: pdfErr } = await supabase.storage
