@@ -174,12 +174,17 @@ router.post('/generar', async (req, res) => {
     console.error('  retry-after:', anthropicRes.headers.get('retry-after'))
     console.error('  modelo:', requestBody.model, '| tamaño PDF (base64):', pdfBase64.length)
     console.error('  body:', errText)
+    let errJson = null
     try {
-      const errJson = JSON.parse(errText)
+      errJson = JSON.parse(errText)
       console.error('  error.type:', errJson?.error?.type)
       console.error('  error.message:', errJson?.error?.message)
     } catch { /* el body no era JSON */ }
-    return res.status(502).json({ success: false, error: { message: 'El servicio de IA devolvió un error' } })
+    // TEMPORAL (diagnóstico): propaga el mensaje real de Anthropic al toast.
+    return res.status(502).json({
+      success: false,
+      error: { message: `IA error (${anthropicRes.status}): ${errJson?.error?.message || errText}` },
+    })
   }
 
   const json = await anthropicRes.json()
