@@ -1,8 +1,8 @@
 {
-  "name": "erp-mamkam",
+  "name": "erp-mamkam-backend",
   "version": "1.0.0",
   "scripts": {
-    "start": "node backend/src/server.js",
-    "install-all": "cd backend && npm install"
-  }
+    "start": "node backend/src/server.js"
+  },
+  "dependencies": {}
 }
