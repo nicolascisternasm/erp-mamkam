@@ -30,11 +30,13 @@ router.get('/webhook', (req, res) => {
   const token     = req.query['hub.verify_token']
   const challenge = req.query['hub.challenge']
 
+  console.log('[webhook-debug] token recibido:', JSON.stringify(token))
+  console.log('[webhook-debug] token env:', JSON.stringify(process.env.META_VERIFY_TOKEN))
+  console.log('[webhook-debug] son iguales:', token === process.env.META_VERIFY_TOKEN)
+
   if (mode === 'subscribe' && token === process.env.META_VERIFY_TOKEN) {
-    console.log('[crm/webhook] Verificación OK')
     return res.status(200).send(challenge)
   }
-  console.warn('[crm/webhook] Verificación fallida (mode/token no coinciden)')
   return res.sendStatus(403)
 })
 
