@@ -1,12 +1,7 @@
 const express = require('express')
 const router  = express.Router()
-const { createClient } = require('@supabase/supabase-js')
 const { enviarMensaje } = require('../services/whatsapp')
-
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_KEY
-)
+const supabase = require('../lib/supabase')
 
 async function enviarRecordatorios(telefonos) {
   const hoy = new Date()
