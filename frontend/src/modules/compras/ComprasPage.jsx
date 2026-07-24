@@ -227,7 +227,7 @@ export default function ComprasPage() {
       /* 2. Enviar email con pdfUrl */
       const stored = localStorage.getItem('mamkam_auth')
       const token  = stored ? JSON.parse(stored).token : null
-      const base   = import.meta.env.VITE_API_URL || 'http://localhost:4000/api'
+      const base   = import.meta.env.VITE_API_URL || 'https://erp-mamkam-production.up.railway.app/api'
       const res    = await fetch(`${base}/compras/${oc.id}/enviar-email`, {
         method: 'POST',
         headers: {

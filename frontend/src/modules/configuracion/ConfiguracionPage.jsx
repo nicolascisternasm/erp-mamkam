@@ -282,7 +282,7 @@ function TabEmpresa() {
       const formData = new FormData()
       formData.append('logo', file)
       const token = JSON.parse(localStorage.getItem('mamkam_auth') || '{}').token
-      const BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000/api'
+      const BASE = import.meta.env.VITE_API_URL || 'https://erp-mamkam-production.up.railway.app/api'
       const res = await fetch(`${BASE}/auth/empresa/logo`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
