@@ -24,6 +24,19 @@ const fromCliente = (r) => ({
  * Definido antes de router.use(requireAuth) para que sea público.
  * ═════════════════════════════════════════════════════════════ */
 
+/* GET /api/crm/webhook-test — TEMPORAL (sin auth). Diagnóstico de headers/token.
+ * ⚠️ Expone META_VERIFY_TOKEN en la respuesta: eliminar tras diagnosticar. */
+router.get('/webhook-test', (req, res) => {
+  res.status(200).json({
+    timestamp: new Date().toISOString(),
+    ip: req.ip || req.connection.remoteAddress,
+    userAgent: req.headers['user-agent'],
+    token_env_definido: !!process.env.META_VERIFY_TOKEN,
+    token_env_valor: process.env.META_VERIFY_TOKEN,
+    query: req.query
+  })
+})
+
 /* GET /api/crm/webhook — verificación del webhook de Meta */
 router.get('/webhook', (req, res) => {
   const mode      = req.query['hub.mode']
