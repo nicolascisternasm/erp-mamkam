@@ -1,4 +1,4 @@
-require('dotenv').config({ path: require('path').join(__dirname, '../../../.env') })
+require('dotenv').config({ path: '/home2/cma14620/nodeapps/erp-api/.env' })
 
 const PAGE_ACCESS_TOKEN = process.env.META_PAGE_ACCESS_TOKEN
 const PAGE_ID = '872356506116562'
