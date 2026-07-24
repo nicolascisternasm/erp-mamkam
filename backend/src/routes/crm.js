@@ -24,43 +24,16 @@ const fromCliente = (r) => ({
  * Definido antes de router.use(requireAuth) para que sea público.
  * ═════════════════════════════════════════════════════════════ */
 
-/* GET /api/crm/webhook-test — TEMPORAL (sin auth). Diagnóstico de headers/token.
- * ⚠️ Expone META_VERIFY_TOKEN en la respuesta: eliminar tras diagnosticar. */
-router.get('/webhook-test', (req, res) => {
-  res.status(200).json({
-    timestamp: new Date().toISOString(),
-    ip: req.ip || req.connection.remoteAddress,
-    userAgent: req.headers['user-agent'],
-    token_env_definido: !!process.env.META_VERIFY_TOKEN,
-    token_env_valor: process.env.META_VERIFY_TOKEN,
-    query: req.query
-  })
-})
-
 /* GET /api/crm/webhook — verificación del webhook de Meta */
 router.get('/webhook', (req, res) => {
-  console.log('[webhook] ===== PETICIÓN RECIBIDA =====')
-  console.log('[webhook] timestamp:', new Date().toISOString())
-  console.log('[webhook] headers:', JSON.stringify(req.headers, null, 2))
-  console.log('[webhook] query:', JSON.stringify(req.query, null, 2))
-  console.log('[webhook] ip:', req.ip)
-
   const mode      = req.query['hub.mode']
   const token     = req.query['hub.verify_token']
   const challenge = req.query['hub.challenge']
 
-  console.log('[webhook] mode:', mode)
-  console.log('[webhook] token recibido:', token)
-  console.log('[webhook] token env:', process.env.META_VERIFY_TOKEN)
-  console.log('[webhook] match:', token === process.env.META_VERIFY_TOKEN)
-  console.log('[webhook] challenge:', challenge)
-
   if (mode === 'subscribe' && token === process.env.META_VERIFY_TOKEN) {
-    console.log('[webhook] ✅ Verificación OK - enviando challenge')
     return res.status(200).send(challenge)
   }
 
-  console.log('[webhook] ❌ Verificación FALLIDA')
   return res.sendStatus(403)
 })
 
