@@ -39,17 +39,28 @@ router.get('/webhook-test', (req, res) => {
 
 /* GET /api/crm/webhook — verificación del webhook de Meta */
 router.get('/webhook', (req, res) => {
+  console.log('[webhook] ===== PETICIÓN RECIBIDA =====')
+  console.log('[webhook] timestamp:', new Date().toISOString())
+  console.log('[webhook] headers:', JSON.stringify(req.headers, null, 2))
+  console.log('[webhook] query:', JSON.stringify(req.query, null, 2))
+  console.log('[webhook] ip:', req.ip)
+
   const mode      = req.query['hub.mode']
   const token     = req.query['hub.verify_token']
   const challenge = req.query['hub.challenge']
 
-  console.log('[webhook-debug] token recibido:', JSON.stringify(token))
-  console.log('[webhook-debug] token env:', JSON.stringify(process.env.META_VERIFY_TOKEN))
-  console.log('[webhook-debug] son iguales:', token === process.env.META_VERIFY_TOKEN)
+  console.log('[webhook] mode:', mode)
+  console.log('[webhook] token recibido:', token)
+  console.log('[webhook] token env:', process.env.META_VERIFY_TOKEN)
+  console.log('[webhook] match:', token === process.env.META_VERIFY_TOKEN)
+  console.log('[webhook] challenge:', challenge)
 
   if (mode === 'subscribe' && token === process.env.META_VERIFY_TOKEN) {
+    console.log('[webhook] ✅ Verificación OK - enviando challenge')
     return res.status(200).send(challenge)
   }
+
+  console.log('[webhook] ❌ Verificación FALLIDA')
   return res.sendStatus(403)
 })
 
