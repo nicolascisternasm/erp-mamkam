@@ -213,6 +213,11 @@ router.post('/login', async (req, res) => {
     .is('deleted_at', null)
     .maybeSingle()
 
+  console.log('[login-debug] usuario encontrado:', !!user)
+  console.log('[login-debug] activo:', user?.activo)
+  console.log('[login-debug] hash_method:', user?.hash_method)
+  console.log('[login-debug] tiene hash:', !!user?.password_hash)
+
   if (!user || user.activo === false) {
     return res.status(401).json({
       success: false,
@@ -221,6 +226,7 @@ router.post('/login', async (req, res) => {
   }
 
   const valid = await verifyPassword(password, user.password_hash, user.hash_method || 'bcrypt')
+  console.log('[login-debug] password válido:', valid)
   if (!valid) {
     return res.status(401).json({
       success: false,
