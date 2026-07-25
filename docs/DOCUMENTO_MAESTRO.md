@@ -1,6 +1,6 @@
 # DOCUMENTO MAESTRO — ERP MAMKAM
-**Versión:** 1.6.0  
-**Fecha:** 2026-07-23  
+**Versión:** 1.7.0  
+**Fecha:** 2026-07-25  
 **Estado:** Documento Vivo — sujeto a revisiones controladas  
 **Clasificación:** Interno / Confidencial
 
@@ -1768,6 +1768,6 @@ Ubicadas en `/nodeapps/erp-api/.env` (no versionadas):
 
 ---
 
-*Documento Maestro ERP MAMKAM — v1.6.0*  
-*Actualizado el 2026-07-23 para reflejar el estado real del código*  
+*Documento Maestro ERP MAMKAM — v1.7.0*  
+*Actualizado el 2026-07-25 para reflejar el estado real del código*  
 *Próxima revisión: al completar CRM (verificación webhook Meta) o IAD/CONT*
