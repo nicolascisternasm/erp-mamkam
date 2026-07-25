@@ -29,6 +29,15 @@ const formatCampo = (k) =>
     .replace(/_/g, ' ')
     .replace(/\b\w/g, (c) => c.toUpperCase())
 
+/* Fecha legible en español: "25 jul 2026, 20:25" */
+const formatFecha = (fecha) => {
+  if (!fecha) return '—'
+  return new Date(fecha).toLocaleString('es-CL', {
+    day: 'numeric', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit'
+  })
+}
+
 /* ── Página principal ───────────────────────────────────────── */
 
 export default function CRMPage() {
@@ -257,8 +266,8 @@ export default function CRMPage() {
               </div>
 
               <div className="text-xs text-slate-400 pt-2 border-t border-slate-100 space-y-1">
-                <p>Creado: {formatDate(sel.createdAt)}</p>
-                {sel.updatedAt && <p>Actualizado: {formatDate(sel.updatedAt)}</p>}
+                <p>Creado: {formatFecha(sel.createdAt)}</p>
+                {sel.updatedAt && <p>Actualizado: {formatFecha(sel.updatedAt)}</p>}
               </div>
             </div>
           </aside>
