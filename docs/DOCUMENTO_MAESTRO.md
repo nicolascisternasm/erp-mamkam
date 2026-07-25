@@ -94,7 +94,8 @@ ERP MAMKAM
 | **OC — Órdenes de Compra** | ✅ Operativo | CRUD básico, items, solo rol admin |
 | **TRB — Trabajadores** | ✅ Operativo | CRUD completo, datos personales y laborales |
 | **RRHH** | ✅ Operativo | Documentos empresa/trabajador, gestión de tipos, amonestaciones con IA |
-| **CRM** | ⚠️ Parcial | Tabla clientes, lista con filtros, webhook Meta Lead Ads (pendiente verificación) |
+| **CRM** | ✅ Operativo | Tabla clientes, lista con filtros, webhook Meta Lead Ads verificado, leads automáticos desde Facebook Lead Ads con datos adicionales |
+| **Backend Railway** | ✅ Operativo | Backend migrado de cPanel a Railway, deploy automático desde GitHub |
 | **FIN — Finanzas** | ⚠️ Parcial | Movimientos, conciliación manual, importación CSV, gastos con foto |
 | **Usuarios** | ⚠️ Parcial | Página existente, gestión básica |
 | **Configuración** | ⚠️ Parcial | Página existente, ajustes generales |
@@ -110,6 +111,8 @@ ERP MAMKAM
 |------|----------------|------|
 | **Frontend** | React + JavaScript + TailwindCSS + React Router + Lucide React | Sin TypeScript, sin shadcn/ui |
 | **Backend** | Node.js + Express 4 + JavaScript | Sin TypeScript, sin Prisma |
+| **Backend hosting** | Railway (antes cPanel/Passenger) | Deploy automático desde GitHub |
+| **Webhook** | `erp-mamkam-production.up.railway.app` | Endpoint público de Meta Lead Ads |
 | **Base de datos** | Supabase (PostgreSQL cloud) | Vía `@supabase/supabase-js` |
 | **Autenticación** | JWT (`jsonwebtoken`) + bcryptjs | Token de 7 días, sin refresh |
 | **Email** | EmailJS (desde el frontend) | Sin Nodemailer en backend |
@@ -1707,6 +1710,52 @@ Ubicadas en `/nodeapps/erp-api/.env` (no versionadas):
 - Frontend (SPA React): `/public_html/erp.mamkam/`
 - Backend (Node.js/Express bajo Passenger): `/nodeapps/erp-api/`
 - **Fix de routing SPA:** el `.htaccess` del ERP usa `RewriteRule ^ index.html [QSA,END]`. El flag `END` (no `L`) evita que las reglas heredadas del sitio padre reprocesen la petición y redirijan al home, permitiendo el deep-linking en el subdirectorio.
+
+---
+
+## ROADMAP INTEGRACIONES Y CRM AVANZADO
+
+### Fase 1 — Configuración Global: Integraciones (próxima)
+- Página Configuración → Integraciones en el ERP
+- Conexión OAuth con Meta/Facebook (botón "Conectar con Facebook")
+- Almacena token por empresa en tabla `integraciones`
+- Muestra página conectada, estado del token y opción de desconectar
+
+### Fase 2 — CRM: Configuración de Formularios
+- Pestaña "Configuración" dentro del módulo CRM
+- Lista todos los formularios de Meta asociados a la página conectada
+- Field Mapping visual: mapear campos del formulario Meta a campos del CRM
+- Asignar responsable por formulario
+- Activar/desactivar formularios
+
+### Fase 3 — Bandeja Unificada (estilo Manychat)
+- Nueva sección "Bandeja" en el CRM
+- Unifica en una sola vista:
+  * Leads de formularios Meta
+  * Mensajes de WhatsApp Business
+  * Mensajes directos de Instagram
+  * Comentarios de Instagram
+- Respuesta directa desde el ERP sin salir del sistema
+- Asignación de conversaciones a vendedores
+- Estados: nuevo, en atención, resuelto
+
+### Fase 4 — WhatsApp Business API
+- Integración con WhatsApp Business API (Meta)
+- Recepción de mensajes entrantes → Bandeja unificada
+- Envío de mensajes desde el ERP
+- Plantillas de mensajes aprobadas por Meta
+- Click-to-WhatsApp desde anuncios → CRM automático
+
+### Fase 5 — Instagram
+- Mensajes directos de Instagram → Bandeja unificada
+- Comentarios en publicaciones → notificación y gestión
+- Respuesta a comentarios desde el ERP
+
+### Fase 6 — Arquitectura Multi-tenant SaaS
+- Cada empresa se conecta a su propia cuenta de Meta via OAuth
+- Tokens almacenados por empresa (tabla integraciones)
+- Webhook único multi-tenant que identifica empresa por page_id
+- Panel de administración de integraciones por empresa
 
 ---
 
