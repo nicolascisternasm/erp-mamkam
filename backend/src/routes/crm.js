@@ -7,16 +7,18 @@ const router = Router()
 const ESTADOS = ['nuevo', 'contactado', 'en_proceso', 'cerrado', 'perdido']
 
 const fromCliente = (r) => ({
-  id:            r.id,
-  nombre:        r.nombre,
-  email:         r.email,
-  telefono:      r.telefono,
-  mensaje:       r.mensaje,
-  fuente:        r.fuente,
-  fuenteDetalle: r.fuente_detalle,
-  estado:        r.estado,
-  createdAt:     r.created_at,
-  updatedAt:     r.updated_at,
+  id:               r.id,
+  nombre:           r.nombre,
+  email:            r.email,
+  telefono:         r.telefono,
+  mensaje:          r.mensaje,
+  fuente:           r.fuente,
+  fuenteDetalle:    r.fuente_detalle,
+  formId:           r.form_id,
+  datosAdicionales: r.datos_adicionales,
+  estado:           r.estado,
+  createdAt:        r.created_at,
+  updatedAt:        r.updated_at,
 })
 
 /* ═══════════════════════════════════════════════════════════════
@@ -98,15 +100,27 @@ router.post('/webhook', async (req, res) => {
           const formId   = lead.form_id || value.form_id || null
           const formName = await fetchFormName(formId, token)
 
+          // Guarda todos los campos no estándar del formulario en datos_adicionales
+          const camposEstandar = ['full_name', 'email', 'phone_number', 'phone',
+                                  'nombre', 'telefono', 'first_name', 'last_name']
+          const datosAdicionales = {}
+          for (const [key, val] of Object.entries(map)) {
+            if (!camposEstandar.some(c => key.toLowerCase().includes(c))) {
+              datosAdicionales[key] = val
+            }
+          }
+
           const registro = {
-            empresa_id:     process.env.META_EMPRESA_ID,
-            nombre:         map.full_name || map.nombre || 'Sin nombre',
-            email:          map.email || null,
-            telefono:       map.phone_number || map.telefono || null,
-            mensaje:        extraerMensaje(map),
-            fuente:         'meta_leads',
-            fuente_detalle: formName || formId || null,
-            estado:         'nuevo',
+            empresa_id:        process.env.META_EMPRESA_ID,
+            nombre:            map.full_name || map.nombre || 'Sin nombre',
+            email:             map.email || null,
+            telefono:          map.phone_number || map.telefono || null,
+            mensaje:           extraerMensaje(map),
+            fuente:            'meta_leads',
+            fuente_detalle:    formName || formId || null,
+            form_id:           formId,
+            datos_adicionales: Object.keys(datosAdicionales).length > 0 ? datosAdicionales : null,
+            estado:            'nuevo',
           }
 
           const { error } = await supabase.from('clientes').insert(registro)

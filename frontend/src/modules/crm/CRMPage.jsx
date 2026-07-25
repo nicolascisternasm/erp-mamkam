@@ -23,6 +23,12 @@ const fuenteMeta = (fuente) =>
     ? { icon: '🎯', label: 'Meta Leads' }
     : { icon: '✏️', label: 'Manual' }
 
+/* "mi_campo_custom" → "Mi Campo Custom" */
+const formatCampo = (k) =>
+  String(k)
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+
 /* ── Página principal ───────────────────────────────────────── */
 
 export default function CRMPage() {
@@ -210,6 +216,20 @@ export default function CRMPage() {
                 <div>
                   <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">Mensaje</p>
                   <p className="text-sm text-slate-700 whitespace-pre-line bg-slate-50 rounded-lg p-3">{sel.mensaje}</p>
+                </div>
+              )}
+
+              {sel.datosAdicionales && Object.keys(sel.datosAdicionales).length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">Datos adicionales</p>
+                  <div className="bg-slate-50 rounded-lg p-3 space-y-1.5">
+                    {Object.entries(sel.datosAdicionales).map(([campo, valor]) => (
+                      <div key={campo} className="text-sm">
+                        <span className="font-medium text-slate-600">{formatCampo(campo)}:</span>{' '}
+                        <span className="text-slate-700">{String(valor)}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 
