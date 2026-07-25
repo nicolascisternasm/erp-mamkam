@@ -30,6 +30,8 @@ const recordatoriosRoutes    = require('./routes/recordatorios.js')
 const movContablesRoutes     = require('./routes/movimientosContables')
 const amonestacionesRoutes   = require('./routes/amonestaciones.js')
 const crmRoutes              = require('./routes/crm.js')
+const integracionesRoutes    = require('./routes/integraciones.js')
+const { requireAuth }        = require('./middleware/auth.js')
 
 const app = express()
 const PORT = process.env.PORT || 4000
@@ -67,6 +69,7 @@ app.use('/api/recordatorios',         recordatoriosRoutes)
 app.use('/api/movimientos-contables', movContablesRoutes)
 app.use('/api/amonestaciones',        amonestacionesRoutes)
 app.use('/api/crm',                   crmRoutes)
+app.use('/api/integraciones',         requireAuth, integracionesRoutes)
 
 app.use((req, res, next) => {
   res.status(404).json({ error: `Ruta no encontrada: ${req.method} ${req.path}` })

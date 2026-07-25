@@ -31,6 +31,7 @@ import ProductosPage from './modules/productos/ProductosPage'
 import PlanificacionPage from './modules/proyectos/PlanificacionPage'
 import ProveedoresPage from './modules/proveedores/ProveedoresPage'
 import CRMPage from './modules/crm/CRMPage'
+import MetaCallbackPage from './modules/configuracion/MetaCallbackPage'
 
 export default function App() {
   return (
@@ -189,6 +190,22 @@ export default function App() {
                 element={
                   <ProtectedRoute roles={['admin']}>
                     <ConfiguracionPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/configuracion/integraciones"
+                element={
+                  <ProtectedRoute roles={['admin']}>
+                    <ConfiguracionPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/configuracion/integraciones/meta/callback"
+                element={
+                  <ProtectedRoute roles={['admin']}>
+                    <MetaCallbackPage />
                   </ProtectedRoute>
                 }
               />

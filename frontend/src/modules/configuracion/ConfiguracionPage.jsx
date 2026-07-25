@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useLocation, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { apiClient } from '../../services/apiClient'
 import { supabase } from '../../services/supabase'
@@ -6,7 +7,7 @@ import {
   Save, User, Lock, CheckCircle2, AlertCircle,
   Building2, RefreshCw, Eye, EyeOff, ImagePlus,
   Plus, Pencil, Trash2, X, Tag, FileText,
-  ChevronDown, Loader2,
+  ChevronDown, Loader2, Facebook, Unplug,
 } from 'lucide-react'
 import DiasNoLaborablesPage from '../empresa/DiasNoLaborablesPage'
 import UsuariosPage from '../usuarios/UsuariosPage'
@@ -1032,21 +1033,127 @@ function TabAccesos() {
   )
 }
 
+/* ── Tab: Integraciones ──────────────────────────────────────────── */
+
+const META_APP_ID = '1681505619081822'
+const META_SCOPE  = 'pages_show_list,leads_retrieval,pages_read_engagement,pages_manage_metadata,ads_management'
+
+function TabIntegraciones() {
+  const [integraciones, setIntegraciones] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy]       = useState(false)
+
+  const cargar = async () => {
+    setLoading(true)
+    try {
+      const data = await apiClient.get('/integraciones')
+      setIntegraciones(data || [])
+    } catch { /* deja la lista vacía */ }
+    finally { setLoading(false) }
+  }
+  useEffect(() => { cargar() }, [])
+
+  const meta = integraciones.find(i => i.proveedor === 'meta')
+
+  const conectar = () => {
+    const redirectUri = `${window.location.origin}/configuracion/integraciones/meta/callback`
+    const url =
+      `https://www.facebook.com/v19.0/dialog/oauth?client_id=${META_APP_ID}` +
+      `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+      `&scope=${META_SCOPE}` +
+      `&response_type=code`
+    window.location.href = url
+  }
+
+  const desconectar = async () => {
+    if (!meta) return
+    setBusy(true)
+    try {
+      await apiClient.delete(`/integraciones/${meta.id}`)
+      await cargar()
+    } catch { /* noop */ }
+    finally { setBusy(false) }
+  }
+
+  const tokenVigente = meta?.tokenExpiresAt ? new Date(meta.tokenExpiresAt) > new Date() : null
+
+  return (
+    <div className="card p-6 max-w-xl space-y-4">
+      <div className="flex items-center gap-3">
+        <div className="w-11 h-11 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0">
+          <Facebook className="w-6 h-6 text-blue-600" />
+        </div>
+        <div>
+          <h3 className="text-base font-semibold text-slate-900">Meta / Facebook</h3>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Conecta tu página para recibir automáticamente los leads de Facebook Lead Ads.
+          </p>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-6"><RefreshCw className="w-5 h-5 text-slate-300 animate-spin" /></div>
+      ) : meta ? (
+        <>
+          <div className="bg-slate-50 rounded-lg p-4 space-y-2">
+            <div className="flex items-center gap-2 text-sm">
+              <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+              <span className="font-medium text-slate-800">Página conectada:</span>
+              <span className="text-slate-700">{meta.pageName || meta.pageId}</span>
+            </div>
+            <div className="text-xs text-slate-500 pl-6">
+              Estado del token:{' '}
+              {meta.tokenExpiresAt
+                ? (tokenVigente
+                    ? <span className="text-emerald-600 font-medium">Vigente hasta {new Date(meta.tokenExpiresAt).toLocaleDateString('es-CL')}</span>
+                    : <span className="text-red-600 font-medium">Expirado — vuelve a conectar</span>)
+                : <span className="text-slate-500">Activo (sin fecha de expiración)</span>}
+            </div>
+          </div>
+          <button
+            onClick={desconectar}
+            disabled={busy}
+            className="btn-secondary text-sm text-red-600 hover:text-red-700 disabled:opacity-50"
+          >
+            {busy ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Unplug className="w-4 h-4" />}
+            Desconectar
+          </button>
+        </>
+      ) : (
+        <button
+          onClick={conectar}
+          className="btn-primary w-full justify-center"
+          style={{ backgroundColor: '#1877F2' }}
+        >
+          <Facebook className="w-4 h-4" />
+          Conectar con Facebook
+        </button>
+      )}
+    </div>
+  )
+}
+
 /* ── Página principal ────────────────────────────────────────────── */
 export default function ConfiguracionPage() {
   const { user, updateUser } = useAuth()
-  const [tab, setTab] = useState('perfil')
+  const location = useLocation()
+  const [searchParams] = useSearchParams()
+  const [tab, setTab] = useState(() =>
+    location.pathname.includes('/integraciones') ? 'integraciones' : 'perfil'
+  )
+  const status = searchParams.get('status')
 
   const TABS = [
     { key: 'perfil',   label: 'Mi Perfil'           },
     { key: 'password', label: 'Contraseña'           },
     ...(user?.rol === 'admin' ? [
-      { key: 'empresa',   label: 'Mi Empresa'          },
-      { key: 'feriados',  label: 'Días no laborables'  },
-      { key: 'accesos',   label: 'Gestión de Accesos'  },
-      { key: 'usuarios',  label: 'Usuarios'             },
-      { key: 'cuentas',   label: 'Cuentas Contables'   },
-      { key: 'tipos-doc', label: 'Tipos de Documento'  },
+      { key: 'empresa',      label: 'Mi Empresa'          },
+      { key: 'feriados',     label: 'Días no laborables'  },
+      { key: 'accesos',      label: 'Gestión de Accesos'  },
+      { key: 'usuarios',     label: 'Usuarios'             },
+      { key: 'cuentas',      label: 'Cuentas Contables'   },
+      { key: 'tipos-doc',    label: 'Tipos de Documento'  },
+      { key: 'integraciones', label: 'Integraciones'      },
     ] : []),
   ]
 
@@ -1057,13 +1164,24 @@ export default function ConfiguracionPage() {
         <p className="text-sm text-slate-500 mt-0.5">Administra tu perfil y los datos de tu empresa.</p>
       </div>
 
+      {tab === 'integraciones' && status === 'success' && (
+        <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3 text-sm text-emerald-800">
+          <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> Integración conectada correctamente.
+        </div>
+      )}
+      {tab === 'integraciones' && status === 'error' && (
+        <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-800">
+          <AlertCircle className="w-4 h-4 flex-shrink-0" /> No se pudo completar la conexión con Meta. Intenta nuevamente.
+        </div>
+      )}
+
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-slate-200">
+      <div className="flex gap-1 border-b border-slate-200 overflow-x-auto">
         {TABS.map(t => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap ${
               tab === t.key
                 ? 'border-indigo-500 text-indigo-600'
                 : 'border-transparent text-slate-500 hover:text-slate-700'
@@ -1074,14 +1192,15 @@ export default function ConfiguracionPage() {
         ))}
       </div>
 
-      {tab === 'perfil'    && <TabPerfil user={user} updateUser={updateUser} />}
-      {tab === 'password'  && <TabContrasena />}
-      {tab === 'empresa'   && <TabEmpresa />}
-      {tab === 'feriados'  && <DiasNoLaborablesPage />}
-      {tab === 'accesos'   && <TabAccesos />}
-      {tab === 'usuarios'  && <UsuariosPage />}
-      {tab === 'cuentas'   && <TabCuentasContables />}
-      {tab === 'tipos-doc' && <TabTiposDocumento />}
+      {tab === 'perfil'        && <TabPerfil user={user} updateUser={updateUser} />}
+      {tab === 'password'      && <TabContrasena />}
+      {tab === 'empresa'       && <TabEmpresa />}
+      {tab === 'feriados'      && <DiasNoLaborablesPage />}
+      {tab === 'accesos'       && <TabAccesos />}
+      {tab === 'usuarios'      && <UsuariosPage />}
+      {tab === 'cuentas'       && <TabCuentasContables />}
+      {tab === 'tipos-doc'     && <TabTiposDocumento />}
+      {tab === 'integraciones' && <TabIntegraciones />}
     </div>
   )
 }
