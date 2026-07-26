@@ -485,8 +485,8 @@ export default function CotizacionDetalle() {
               </div>
             )}
 
-            {/* Estados negativos — siempre disponibles excepto en estados finales */}
-            {!['cerrada', 'rechazada', 'perdida'].includes(cot.estado) && (
+            {/* Estados negativos — solo mientras el cliente aún puede rechazar */}
+            {['enviada', 'visita'].includes(cot.estado) && (
               <div className="flex gap-2 pt-1">
                 <button
                   onClick={() => changeCotizacionStatus(cot.id, 'rechazada')}
