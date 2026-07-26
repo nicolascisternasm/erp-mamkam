@@ -11,7 +11,7 @@ import Toast from '../../components/Toast'
 import Modal, { ConfirmModal } from '../../components/Modal'
 import {
   Plus, Search, Eye, Pencil, Trash2, FileText,
-  MessageCircle, Mail, Download, Loader2, Copy, User, Calendar,
+  Download, Loader2, Copy, User, Calendar,
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Package, X,
   Paperclip, AlertTriangle, CheckCircle2,
 } from 'lucide-react'
@@ -37,24 +37,6 @@ function buildPublicUrl(c) {
   }
   const base = import.meta.env.VITE_PUBLIC_URL || window.location.origin
   return `${base}/ver?d=${btoa(unescape(encodeURIComponent(JSON.stringify(lean))))}`
-}
-
-function buildWhatsAppMessage(c, empresa) {
-  const nombreEmpresa = empresa?.nombre_fantasia || empresa?.razon_social || 'nosotros'
-  const proyecto = c.glosa?.trim() || c.items?.[0]?.producto || 'su proyecto'
-  const cliente = c.cliente?.split(' ')[0] || 'cliente'
-  return [
-    `Hola *${cliente}*, esperamos que te encuentres muy bien.`,
-    ``,
-    `Tenemos lista tu cotizacion, preparada especialmente para ti:`,
-    ``,
-    `*Cotizacion:* ${c.numero}`,
-    `*Proyecto:* ${proyecto}`,
-    ``,
-    `Quedamos atentos ante cualquier consulta o ajuste que necesites.`,
-    ``,
-    `Gracias por comunicarte con *${nombreEmpresa}*.`,
-  ].join('\n')
 }
 
 const ESTADOS = ['todos', 'borrador', 'enviada', 'visita', 'aprobada', 'en_ejecucion', 'cerrada', 'rechazada', 'perdida']
@@ -108,7 +90,6 @@ export default function CotizacionesPage() {
   const [paginaActual,   setPaginaActual]   = useState(1)
   const [deleteId, setDeleteId] = useState(null)
   const [duplicateId, setDuplicateId] = useState(null)
-  const [modalEnvioEmailCot, setModalEnvioEmailCot] = useState(null)
   const [toast, setToast] = useState(null)
   const comprobanteModalFileRef = useRef(null)
   const [modalPickerCot, setModalPickerCot] = useState(null)
@@ -239,27 +220,6 @@ export default function CotizacionesPage() {
       {children}
     </button>
   )
-
-  const handleWhatsapp = (c) => {
-    if (!c.telefono) {
-      showToast('error', 'El cliente no tiene teléfono registrado')
-      return
-    }
-    const msg = buildWhatsAppMessage(c, user?.empresa)
-    const phone = c.telefono.replace(/\D/g, '')
-    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank')
-    if (c.estado === 'borrador') changeCotizacionStatus(c.id, 'enviada')
-    updateCotizacion(c.id, { enviadoWhatsapp: true })
-    showToast('success', `WhatsApp abierto · Para enviar el PDF, abre el detalle`)
-  }
-
-  const handleEmail = (c) => {
-    if (!c.email) {
-      showToast('error', 'El cliente no tiene correo registrado')
-      return
-    }
-    setModalEnvioEmailCot(c)
-  }
 
   const handlePDF = (c) => navigate(`/cotizaciones/${c.id}`)
 
@@ -1062,34 +1022,6 @@ export default function CotizacionesPage() {
           </Modal>
         )
       })()}
-
-      {modalEnvioEmailCot && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setModalEnvioEmailCot(null)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
-            <div className="px-6 py-5 border-b border-slate-100">
-              <h3 className="font-semibold text-slate-900">Enviar cotización {modalEnvioEmailCot.numero}</h3>
-              <p className="text-sm text-slate-500 mt-0.5">a {modalEnvioEmailCot.cliente}</p>
-            </div>
-            <div className="px-6 py-4">
-              <label className="block text-xs font-medium text-slate-500 mb-1">Destinatario</label>
-              <p className="text-sm text-slate-800 bg-slate-50 px-3 py-2 rounded-lg">{modalEnvioEmailCot.email}</p>
-            </div>
-            <div className="flex justify-end gap-2 px-6 pb-5">
-              <button onClick={() => setModalEnvioEmailCot(null)} className="btn-secondary">Cancelar</button>
-              <button
-                onClick={() => {
-                  navigate(`/cotizaciones/${modalEnvioEmailCot.id}?accion=enviar-email`)
-                  setModalEnvioEmailCot(null)
-                }}
-                className="btn-primary"
-              >
-                <Mail className="w-4 h-4" />
-                Enviar cotización
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       <Toast toast={toast} onDismiss={() => setToast(null)} />
     </div>
