@@ -1,5 +1,5 @@
 const { Router } = require('express')
-const { requireAuth } = require('../middleware/auth.js')
+const { requireAuth, requireAdmin } = require('../middleware/auth.js')
 const supabase = require('../lib/supabase.js')
 
 const router = Router()
@@ -150,6 +150,69 @@ router.post('/webhook', async (req, res) => {
   }
 })
 
+/* Sincroniza todos los leads históricos de un formulario de Meta,
+ * paginando la Graph API e insertando solo los que no existan (por leadgen_id). */
+async function syncFormLeads(formId, token, empresaId) {
+  let url = `https://graph.facebook.com/v19.0/${formId}/leads?fields=id,created_time,field_data&limit=100&access_token=${token}`
+  let total = 0
+  let insertados = 0
+
+  while (url) {
+    const res = await fetch(url)
+    const data = await res.json()
+    if (data.error) throw new Error(data.error.message)
+
+    for (const lead of data.data || []) {
+      total++
+      // Verificar si ya existe por leadgen_id
+      const { data: existe } = await supabase
+        .from('clientes')
+        .select('id')
+        .eq('leadgen_id', lead.id)
+        .maybeSingle()
+
+      if (existe) continue
+
+      const map = mapFieldData(lead.field_data)
+      const camposEstandar = ['full_name', 'email', 'phone_number', 'phone',
+        'nombre', 'telefono', 'first_name', 'last_name',
+        'nombre_completo', 'correo_electrónico', 'correo_electronico',
+        'número_de_teléfono', 'numero_de_telefono']
+
+      const datosAdicionales = {}
+      for (const [key, val] of Object.entries(map)) {
+        if (!camposEstandar.some(c => key.toLowerCase().includes(c))) {
+          datosAdicionales[key] = val
+        }
+      }
+
+      const registro = {
+        empresa_id: empresaId,
+        leadgen_id: lead.id,
+        nombre: map.nombre_completo || map.full_name ||
+                `${map.first_name || ''} ${map.last_name || ''}`.trim() || null,
+        email: map.email || map['correo_electrónico'] || map.correo_electronico || null,
+        telefono: map.phone_number || map.phone ||
+                  map['número_de_teléfono'] || map.numero_de_telefono || null,
+        mensaje: extraerMensaje(map),
+        fuente: 'meta_leads',
+        fuente_detalle: formId,
+        form_id: formId,
+        estado: 'nuevo',
+        datos_adicionales: Object.keys(datosAdicionales).length > 0 ? datosAdicionales : null,
+        created_at: new Date(lead.created_time).toISOString()
+      }
+
+      const { error } = await supabase.from('clientes').insert(registro)
+      if (!error) insertados++
+    }
+
+    url = data.paging?.next || null
+  }
+
+  return { total, insertados }
+}
+
 /* ═══════════════════════════════════════════════════════════════
  * RUTAS AUTENTICADAS
  * ═════════════════════════════════════════════════════════════ */
@@ -197,6 +260,23 @@ router.patch('/clientes/:id', async (req, res) => {
     return res.status(404).json({ success: false, error: { message: 'Cliente no encontrado' } })
   }
   res.json({ success: true, data: fromCliente(data) })
+})
+
+/* POST /api/crm/sync-leads — importa los leads históricos de un formulario (solo admin) */
+router.post('/sync-leads', requireAdmin, async (req, res) => {
+  try {
+    const { form_id } = req.body
+    if (!form_id) return res.status(400).json({ error: 'form_id requerido' })
+
+    const token = process.env.META_PAGE_ACCESS_TOKEN
+    const empresaId = process.env.META_EMPRESA_ID
+
+    const resultado = await syncFormLeads(form_id, token, empresaId)
+    res.json({ success: true, ...resultado })
+  } catch (err) {
+    console.error('[sync-leads]', err.message)
+    res.status(500).json({ error: err.message })
+  }
 })
 
 module.exports = router
