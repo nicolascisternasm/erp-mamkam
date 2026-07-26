@@ -1,9 +1,8 @@
 import { useState, useEffect, useMemo } from 'react'
 import { apiClient } from '../../services/apiClient'
-import { formatDate } from '../../utils/formatters'
 import Toast from '../../components/Toast'
 import {
-  Users2, Filter, X, Mail, Phone, RefreshCw, Target, Pencil,
+  Users2, Filter, X, Mail, Phone, RefreshCw, Pencil,
 } from 'lucide-react'
 
 /* ── Metadatos de estado ────────────────────────────────────── */
@@ -29,24 +28,33 @@ const formatCampo = (k) =>
     .replace(/_/g, ' ')
     .replace(/\b\w/g, (c) => c.toUpperCase())
 
-/* Fecha legible en español: "25 jul 2026, 20:25" */
+/* Fecha legible en hora de Chile: "26 jul 2026, 11:39" */
 const formatFecha = (fecha) => {
   if (!fecha) return '—'
   return new Date(fecha).toLocaleString('es-CL', {
     day: 'numeric', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit'
+    hour: '2-digit', minute: '2-digit',
+    timeZone: 'America/Santiago'
   })
 }
 
 /* ── Página principal ───────────────────────────────────────── */
 
+const ITEMS_POR_PAGINA = 10
+
 export default function CRMPage() {
   const [clientes, setClientes] = useState([])
   const [loading, setLoading]   = useState(true)
-  const [filtro, setFiltro]     = useState('todos')
   const [sel, setSel]           = useState(null)   // cliente seleccionado (panel lateral)
   const [saving, setSaving]     = useState(false)
   const [toast, setToast]       = useState(null)
+
+  // Filtros y paginación
+  const [filtroProducto, setFiltroProducto] = useState('todos')
+  const [filtroEstado, setFiltroEstado]     = useState('todos')
+  const [fechaDesde, setFechaDesde]         = useState('')
+  const [fechaHasta, setFechaHasta]         = useState('')
+  const [pagina, setPagina]                 = useState(1)
 
   const showToast = (type, msg) => {
     setToast({ type, msg })
@@ -67,10 +75,41 @@ export default function CRMPage() {
 
   useEffect(() => { cargar() }, [])
 
-  const filtrados = useMemo(
-    () => (filtro === 'todos' ? clientes : clientes.filter((c) => c.estado === filtro)),
-    [clientes, filtro],
+  const productosUnicos = useMemo(
+    () => [...new Set(clientes.map((c) => c.producto).filter(Boolean))],
+    [clientes],
   )
+
+  const filtrados = useMemo(() => {
+    return clientes.filter((c) => {
+      if (filtroProducto !== 'todos' && c.producto !== filtroProducto) return false
+      if (filtroEstado !== 'todos' && c.estado !== filtroEstado) return false
+      if (fechaDesde && c.createdAt && new Date(c.createdAt) < new Date(fechaDesde)) return false
+      if (fechaHasta && c.createdAt) {
+        const hasta = new Date(fechaHasta)
+        hasta.setHours(23, 59, 59, 999)   // incluye todo el día "hasta"
+        if (new Date(c.createdAt) > hasta) return false
+      }
+      return true
+    })
+  }, [clientes, filtroProducto, filtroEstado, fechaDesde, fechaHasta])
+
+  // Al cambiar cualquier filtro, volver a la página 1
+  useEffect(() => { setPagina(1) }, [filtroProducto, filtroEstado, fechaDesde, fechaHasta])
+
+  const totalPaginas = Math.max(1, Math.ceil(filtrados.length / ITEMS_POR_PAGINA))
+  const paginaActual = Math.min(pagina, totalPaginas)
+  const paginados = filtrados.slice((paginaActual - 1) * ITEMS_POR_PAGINA, paginaActual * ITEMS_POR_PAGINA)
+
+  const hayFiltros = filtroProducto !== 'todos' || filtroEstado !== 'todos' || !!fechaDesde || !!fechaHasta
+
+  const limpiarFiltros = () => {
+    setFiltroProducto('todos')
+    setFiltroEstado('todos')
+    setFechaDesde('')
+    setFechaHasta('')
+    setPagina(1)
+  }
 
   const cambiarEstado = async (cliente, estado) => {
     if (estado === cliente.estado) return
@@ -87,9 +126,6 @@ export default function CRMPage() {
     }
   }
 
-  const conteo = (key) =>
-    key === 'todos' ? clientes.length : clientes.filter((c) => c.estado === key).length
-
   return (
     <div className="space-y-5 w-full">
       {/* Cabecera */}
@@ -105,26 +141,44 @@ export default function CRMPage() {
         </button>
       </div>
 
-      {/* Filtros por estado */}
-      <div className="flex flex-wrap items-center gap-2">
-        <Filter className="w-4 h-4 text-slate-400" />
-        {[{ key: 'todos', label: 'Todos' }, ...ESTADOS].map((e) => {
-          const active = filtro === e.key
-          return (
-            <button
-              key={e.key}
-              onClick={() => setFiltro(e.key)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 ${
-                active ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              {e.label}
-              <span className={`text-xs px-1.5 rounded-full ${active ? 'bg-indigo-200 text-indigo-800' : 'bg-slate-200 text-slate-500'}`}>
-                {conteo(e.key)}
-              </span>
-            </button>
-          )
-        })}
+      {/* Filtros */}
+      <div className="card p-4 flex flex-wrap items-end gap-3">
+        <Filter className="w-4 h-4 text-slate-400 mb-2.5" />
+        <div>
+          <label className="label-base">Producto</label>
+          <select
+            value={filtroProducto}
+            onChange={(e) => setFiltroProducto(e.target.value)}
+            className="input-base text-sm"
+          >
+            <option value="todos">Todos</option>
+            {productosUnicos.map((p) => <option key={p} value={p}>{p}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="label-base">Estado</label>
+          <select
+            value={filtroEstado}
+            onChange={(e) => setFiltroEstado(e.target.value)}
+            className="input-base text-sm"
+          >
+            <option value="todos">Todos</option>
+            {ESTADOS.map((e) => <option key={e.key} value={e.key}>{e.label}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="label-base">Desde</label>
+          <input type="date" value={fechaDesde} onChange={(e) => setFechaDesde(e.target.value)} className="input-base text-sm" />
+        </div>
+        <div>
+          <label className="label-base">Hasta</label>
+          <input type="date" value={fechaHasta} onChange={(e) => setFechaHasta(e.target.value)} className="input-base text-sm" />
+        </div>
+        {hayFiltros && (
+          <button onClick={limpiarFiltros} className="btn-secondary text-sm mb-0.5">
+            <X className="w-4 h-4" /> Limpiar filtros
+          </button>
+        )}
       </div>
 
       {/* Tabla */}
@@ -138,49 +192,72 @@ export default function CRMPage() {
             <Users2 className="w-10 h-10 text-slate-300 mb-3" />
             <p className="text-sm font-medium text-slate-500">Sin clientes</p>
             <p className="text-xs text-slate-400 mt-1">
-              {filtro === 'todos'
-                ? 'Los leads de Meta y los clientes manuales aparecerán aquí.'
-                : `No hay clientes en estado "${ESTADO_META[filtro]?.label ?? filtro}".`}
+              {hayFiltros
+                ? 'No hay clientes con los filtros seleccionados.'
+                : 'Los leads de Meta y los clientes manuales aparecerán aquí.'}
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-200">
-                  <th className="table-th">Nombre</th>
-                  <th className="table-th">Email</th>
-                  <th className="table-th">Teléfono</th>
-                  <th className="table-th">Producto</th>
-                  <th className="table-th">Estado</th>
-                  <th className="table-th">Fecha</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {filtrados.map((c) => {
-                  const est = ESTADO_META[c.estado] || { label: c.estado, color: 'bg-slate-100 text-slate-600' }
-                  return (
-                    <tr
-                      key={c.id}
-                      onClick={() => setSel(c)}
-                      className={`hover:bg-slate-50/80 transition-colors cursor-pointer ${sel?.id === c.id ? 'bg-indigo-50/50' : ''}`}
-                    >
-                      <td className="table-td text-sm font-medium text-slate-800">{c.nombre}</td>
-                      <td className="table-td text-xs text-slate-500">{c.email || '—'}</td>
-                      <td className="table-td text-xs text-slate-500">{c.telefono || '—'}</td>
-                      <td className="table-td text-xs text-slate-600">{c.producto || '—'}</td>
-                      <td className="table-td">
-                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${est.color}`}>
-                          {est.label}
-                        </span>
-                      </td>
-                      <td className="table-td text-xs text-slate-400">{formatDate(c.createdAt)}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200">
+                    <th className="table-th">Nombre</th>
+                    <th className="table-th">Email</th>
+                    <th className="table-th">Teléfono</th>
+                    <th className="table-th">Producto</th>
+                    <th className="table-th">Estado</th>
+                    <th className="table-th">Fecha</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {paginados.map((c) => {
+                    const est = ESTADO_META[c.estado] || { label: c.estado, color: 'bg-slate-100 text-slate-600' }
+                    return (
+                      <tr
+                        key={c.id}
+                        onClick={() => setSel(c)}
+                        className={`hover:bg-slate-50/80 transition-colors cursor-pointer ${sel?.id === c.id ? 'bg-indigo-50/50' : ''}`}
+                      >
+                        <td className="table-td text-sm font-medium text-slate-800">{c.nombre}</td>
+                        <td className="table-td text-xs text-slate-500">{c.email || '—'}</td>
+                        <td className="table-td text-xs text-slate-500">{c.telefono || '—'}</td>
+                        <td className="table-td text-xs text-slate-600">{c.producto || '—'}</td>
+                        <td className="table-td">
+                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${est.color}`}>
+                            {est.label}
+                          </span>
+                        </td>
+                        <td className="table-td text-xs text-slate-400">{formatFecha(c.createdAt)}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Paginación */}
+            <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100">
+              <button
+                onClick={() => setPagina((p) => Math.max(1, p - 1))}
+                disabled={paginaActual <= 1}
+                className="btn-secondary text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                ← Anterior
+              </button>
+              <span className="text-xs text-slate-500">
+                Página {paginaActual} de {totalPaginas} · {filtrados.length} cliente{filtrados.length === 1 ? '' : 's'}
+              </span>
+              <button
+                onClick={() => setPagina((p) => Math.min(totalPaginas, p + 1))}
+                disabled={paginaActual >= totalPaginas}
+                className="btn-secondary text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Siguiente →
+              </button>
+            </div>
+          </>
         )}
       </div>
 
