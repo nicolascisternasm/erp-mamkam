@@ -705,12 +705,6 @@ export default function CotizacionDetalle() {
           )
         })()}
 
-        {/* Gestión de comprobantes de pago (interactivo — no va al PDF) */}
-        <div className="no-print">
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Comprobantes de pago</p>
-          <ComprobantesCotizacion cot={cot} onUpdate={handleComprobanteUpdate} />
-        </div>
-
         {/* Observaciones */}
         {cot.observaciones && (
           <div className="bg-slate-50 rounded-xl p-4">
@@ -748,6 +742,12 @@ export default function CotizacionDetalle() {
             Este documento es una cotización y no constituye una factura. Válida por 15 días desde su emisión.
           </div>
         </div>
+      </div>
+
+      {/* Comprobantes de pago — fuera del docRef para que no salga en el PDF */}
+      <div className="card p-5 no-print">
+        <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Comprobantes de pago</p>
+        <ComprobantesCotizacion cot={cot} onUpdate={handleComprobanteUpdate} />
       </div>
 
       {/* Modal envío de email */}
