@@ -264,6 +264,51 @@ router.patch('/clientes/:id', async (req, res) => {
   res.json({ success: true, data: fromCliente(data) })
 })
 
+/* GET /api/crm/clientes/:id/comentarios — comentarios del cliente (más nuevos primero) */
+router.get('/clientes/:id/comentarios', async (req, res) => {
+  const { id } = req.params
+  const { data, error } = await supabase
+    .from('crm_comentarios')
+    .select('*')
+    .eq('cliente_id', id)
+    .order('created_at', { ascending: false })
+  if (error) {
+    console.error('[crm/comentarios GET]', error.message)
+    return res.status(500).json({ success: false, error: { message: error.message } })
+  }
+  res.json({ success: true, data: data || [] })
+})
+
+/* POST /api/crm/clientes/:id/comentarios — agrega un comentario al cliente */
+router.post('/clientes/:id/comentarios', async (req, res) => {
+  const { id } = req.params
+  const { comentario } = req.body
+
+  if (!comentario || !comentario.trim()) {
+    return res.status(400).json({ success: false, error: { message: 'El comentario no puede estar vacío' } })
+  }
+
+  const registro = {
+    cliente_id:     id,
+    empresa_id:     req.user.empresa_id,
+    usuario_id:     req.user.id,
+    usuario_nombre: `${req.user.nombre} ${req.user.apellidos || ''}`.trim(),
+    comentario:     comentario.trim(),
+  }
+
+  const { data, error } = await supabase
+    .from('crm_comentarios')
+    .insert(registro)
+    .select()
+    .maybeSingle()
+
+  if (error) {
+    console.error('[crm/comentarios POST]', error.message)
+    return res.status(500).json({ success: false, error: { message: error.message } })
+  }
+  res.json({ success: true, data })
+})
+
 /* POST /api/crm/sync-leads — importa los leads históricos de un formulario (solo admin) */
 router.post('/sync-leads', requireAdmin, async (req, res) => {
   try {

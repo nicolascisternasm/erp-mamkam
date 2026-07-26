@@ -56,6 +56,11 @@ export default function CRMPage() {
   const [fechaHasta, setFechaHasta]         = useState('')
   const [pagina, setPagina]                 = useState(1)
 
+  // Comentarios del cliente seleccionado
+  const [comentarios, setComentarios]             = useState([])
+  const [nuevoComentario, setNuevoComentario]     = useState('')
+  const [loadingComentario, setLoadingComentario] = useState(false)
+
   const showToast = (type, msg) => {
     setToast({ type, msg })
     setTimeout(() => setToast(null), 4000)
@@ -123,6 +128,31 @@ export default function CRMPage() {
       showToast('error', `No se pudo actualizar: ${err.message}`)
     } finally {
       setSaving(false)
+    }
+  }
+
+  // Carga los comentarios del cliente seleccionado
+  useEffect(() => {
+    if (!sel) { setComentarios([]); setNuevoComentario(''); return }
+    let cancel = false
+    apiClient.get(`/crm/clientes/${sel.id}/comentarios`)
+      .then((data) => { if (!cancel) setComentarios(data || []) })
+      .catch(() => { if (!cancel) setComentarios([]) })
+    return () => { cancel = true }
+  }, [sel?.id])
+
+  const agregarComentario = async () => {
+    if (!nuevoComentario.trim() || !sel) return
+    setLoadingComentario(true)
+    try {
+      await apiClient.post(`/crm/clientes/${sel.id}/comentarios`, { comentario: nuevoComentario.trim() })
+      setNuevoComentario('')
+      const data = await apiClient.get(`/crm/clientes/${sel.id}/comentarios`)
+      setComentarios(data || [])
+    } catch (err) {
+      showToast('error', `No se pudo agregar el comentario: ${err.message}`)
+    } finally {
+      setLoadingComentario(false)
     }
   }
 
@@ -315,6 +345,41 @@ export default function CRMPage() {
                   </div>
                 </div>
               )}
+
+              {/* Comentarios */}
+              <div>
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Comentarios</p>
+                <div className="space-y-2 mb-3">
+                  {comentarios.length === 0 ? (
+                    <p className="text-sm text-slate-400">Sin comentarios aún</p>
+                  ) : (
+                    comentarios.map((cm) => (
+                      <div key={cm.id} className="bg-slate-50 rounded-lg p-3">
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <span className="text-sm font-medium text-slate-700">{cm.usuario_nombre}</span>
+                          <span className="text-xs text-slate-400 flex-shrink-0">{formatFecha(cm.created_at)}</span>
+                        </div>
+                        <p className="text-sm text-slate-600 whitespace-pre-line">{cm.comentario}</p>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <textarea
+                  value={nuevoComentario}
+                  onChange={(e) => setNuevoComentario(e.target.value)}
+                  rows={2}
+                  placeholder="Escribe un comentario..."
+                  className="input-base text-sm resize-y"
+                />
+                <button
+                  onClick={agregarComentario}
+                  disabled={!nuevoComentario.trim() || loadingComentario}
+                  className="btn-primary text-sm mt-2 disabled:opacity-50"
+                >
+                  {loadingComentario && <RefreshCw className="w-4 h-4 animate-spin" />}
+                  Agregar
+                </button>
+              </div>
 
               <div>
                 <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2 flex items-center gap-1.5">
