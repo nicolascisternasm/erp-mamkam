@@ -132,6 +132,7 @@ router.post('/webhook', async (req, res) => {
             fuente:            'meta_leads',
             fuente_detalle:    formName || formId || null,
             form_id:           formId,
+            leadgen_id:        leadgenId,
             datos_adicionales: Object.keys(datosAdicionales).length > 0 ? datosAdicionales : null,
             estado:            'nuevo',
           }
