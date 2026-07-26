@@ -481,28 +481,6 @@ export default function CotizacionesPage() {
         })()}
       </td>
       <td className="table-td"><Badge status={c.estado} /></td>
-      <td className="table-td hidden xl:table-cell">
-        {c.creadoPor ? (
-          <div className="flex items-center gap-1.5">
-            <div className="w-5 h-5 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0">
-              <span className="text-[9px] font-bold text-indigo-600">
-                {c.creadoPor.split(' ').map((n) => n[0]).slice(0, 2).join('')}
-              </span>
-            </div>
-            <span className="text-xs text-slate-600">{c.creadoPor}</span>
-          </div>
-        ) : (
-          <span className="text-xs text-slate-300">—</span>
-        )}
-      </td>
-      <td className="table-td hidden lg:table-cell">
-        <div className="flex items-center gap-2">
-          <span className={`w-2 h-2 rounded-full ${c.enviadoWhatsapp ? 'bg-emerald-500' : 'bg-slate-200'}`} />
-          <span className="text-xs text-slate-400">WA</span>
-          <span className={`w-2 h-2 rounded-full ${c.enviadoEmail ? 'bg-blue-500' : 'bg-slate-200'}`} />
-          <span className="text-xs text-slate-400">Mail</span>
-        </div>
-      </td>
       <td className="table-td">
         <div className="flex items-center justify-end gap-1">
           <button title="Ver detalle" onClick={() => navigate(`/cotizaciones/${c.id}`)} className="btn-ghost p-1.5">
@@ -511,11 +489,8 @@ export default function CotizacionesPage() {
           <button title="Duplicar" onClick={() => setDuplicateId(c.id)} className="btn-ghost p-1.5 text-indigo-500 hidden sm:flex">
             <Copy className="w-3.5 h-3.5" />
           </button>
-          <button title="Ver PDF" onClick={() => handlePDF(c)} className="btn-ghost p-1.5 text-slate-500 hidden sm:flex">
+          <button title="Descargar PDF" onClick={() => handlePDF(c)} className="btn-ghost p-1.5 text-slate-500 hidden sm:flex">
             <Download className="w-3.5 h-3.5" />
-          </button>
-          <button title="Enviar por email" onClick={() => handleEmail(c)} className="btn-ghost p-1.5 text-blue-400 hover:text-blue-600 hidden sm:flex">
-            <Mail className="w-3.5 h-3.5" />
           </button>
           {esActiva(c) && (
             <button
@@ -693,8 +668,6 @@ export default function CotizacionesPage() {
                   <th className="table-th hidden md:table-cell">Fecha</th>
                   <th className="table-th text-right">Total</th>
                   <th className="table-th">Estado</th>
-                  <th className="table-th hidden xl:table-cell">Vendedor</th>
-                  <th className="table-th hidden lg:table-cell">Canales</th>
                   <th className="table-th text-right">Acciones</th>
                 </tr>
               </thead>

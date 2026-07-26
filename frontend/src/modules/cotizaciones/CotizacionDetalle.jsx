@@ -557,6 +557,20 @@ export default function CotizacionDetalle() {
             )}
             {cot.email && <p className="text-sm text-slate-500">{cot.email}</p>}
             {cot.telefono && <p className="text-sm text-slate-500">{cot.telefono}</p>}
+
+            {cot.creadoPor && (
+              <div className="mt-4 flex items-center gap-2">
+                <div className="w-7 h-7 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0">
+                  <span className="text-[10px] font-bold text-indigo-600">
+                    {cot.creadoPor.split(' ').map((n) => n[0]).slice(0, 2).join('')}
+                  </span>
+                </div>
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 leading-tight">Vendedor</p>
+                  <p className="text-sm text-slate-700">{cot.creadoPor}</p>
+                </div>
+              </div>
+            )}
           </div>
           <div className="flex sm:justify-end items-start gap-5">
             <div className="text-center">
