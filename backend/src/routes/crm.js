@@ -116,21 +116,17 @@ router.post('/webhook', async (req, res) => {
           const registro = {
             empresa_id:        process.env.META_EMPRESA_ID,
             nombre:            map.full_name ||
-                               `${map.first_name || ''} ${map.last_name || ''}`.trim() ||
-                               map.nombre ||
                                map.nombre_completo ||
-                               'Sin nombre',
+                               `${map.first_name || ''} ${map.last_name || ''}`.trim() ||
+                               null,
             email:             map.email ||
-                               map.correo_electrónico ||
+                               map['correo_electrónico'] ||
                                map.correo_electronico ||
-                               map.correo ||
                                null,
             telefono:          map.phone_number ||
                                map.phone ||
                                map['número_de_teléfono'] ||
                                map.numero_de_telefono ||
-                               map.teléfono ||
-                               map.telefono ||
                                null,
             mensaje:           extraerMensaje(map),
             fuente:            'meta_leads',
