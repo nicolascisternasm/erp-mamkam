@@ -507,106 +507,79 @@ export default function CotizacionDetalle() {
       </div>
 
       {/* Documento — este div es el que se convierte en PDF */}
-      <div ref={docRef} className="card p-6 sm:p-8 space-y-6 bg-white">
-        {/* Cabecera empresa + número */}
-        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
-          <div>
-            {empresa?.logo_url ? (
-              <img src={empresa.logo_url} alt={empresa.razon_social || empresa.nombre} className="max-h-[120px] w-auto max-w-[200px] object-contain mb-2" />
-            ) : (
-              <div className="flex items-center gap-2 mb-2">
-                <div className="w-8 h-8 rounded bg-indigo-600 flex items-center justify-center">
-                  <span className="text-white font-bold text-sm">{(empresa?.razon_social || empresa?.nombre)?.[0] || 'M'}</span>
-                </div>
-                <span className="font-bold text-slate-900 text-xl tracking-tight">{empresa?.razon_social || empresa?.nombre || 'MAMKAM'}</span>
-              </div>
-            )}
-            {empresa?.nombre_fantasia                     && <p className="text-sm text-slate-600 font-medium">{empresa.nombre_fantasia}</p>}
-            {empresa?.rut                                 && <p className="text-xs text-slate-400">RUT: {empresa.rut}</p>}
-            {(empresa?.email_contacto || empresa?.email)  && <p className="text-xs text-slate-400">{empresa.email_contacto || empresa.email}</p>}
-            {empresa?.telefono                            && <p className="text-xs text-slate-400">{empresa.telefono}</p>}
-          </div>
-          <div className="sm:text-right">
-            <div className="text-2xl font-bold text-slate-900">{cot.numero}</div>
-            <div className="text-sm text-slate-500 mt-1">Fecha: {formatDate(cot.fecha)}</div>
-            {cot.fechaExpiracion && (() => {
-              const hoy = new Date().toISOString().split('T')[0]
-              const vencida = cot.fechaExpiracion < hoy && cot.estado !== 'aprobada'
-              return vencida
-                ? <span className="inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700">Vencida</span>
-                : <div className="text-xs text-slate-400 mt-1">Válida hasta: {formatDate(cot.fechaExpiracion)}</div>
-            })()}
+      <div ref={docRef} className="card bg-white overflow-hidden">
+        {/* HEADER — gradiente oscuro con formas abstractas */}
+        <div className="relative overflow-hidden rounded-t-lg" style={{ background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)', minHeight: '140px' }}>
+          <div style={{ position: 'absolute', top: '-40px', right: '-40px', width: '180px', height: '180px', borderRadius: '50%', background: 'rgba(255,107,53,0.3)' }} />
+          <div style={{ position: 'absolute', top: '-20px', right: '60px', width: '100px', height: '100px', borderRadius: '50%', background: 'rgba(33,150,243,0.2)' }} />
+          <div style={{ position: 'absolute', top: '20px', right: '-20px', width: '80px', height: '80px', borderRadius: '50%', background: 'rgba(255,193,7,0.2)' }} />
+          <div className="relative z-10 p-6 flex justify-between items-center">
+            <div>
+              {empresa?.logo_url
+                ? <img src={empresa.logo_url} alt={empresa.razon_social || empresa.nombre} className="max-h-[160px] max-w-[250px] object-contain" style={{ filter: 'brightness(0) invert(1)' }} />
+                : <div className="text-white text-2xl font-bold">{empresa?.nombre_fantasia || empresa?.nombre || 'MAMKAM'}</div>
+              }
+            </div>
+            <div className="text-right">
+              <div className="text-white text-3xl font-bold">{cot.numero}</div>
+              <div className="text-blue-200 text-sm mt-1">Fecha: {formatDate(cot.fecha)}</div>
+              {cot.fechaExpiracion && (() => {
+                const hoy = new Date().toISOString().split('T')[0]
+                const vencida = cot.fechaExpiracion < hoy && cot.estado !== 'aprobada'
+                return vencida
+                  ? <span className="inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-red-500 text-white">Vencida</span>
+                  : <div className="text-xs text-blue-200 mt-1">Válida hasta: {formatDate(cot.fechaExpiracion)}</div>
+              })()}
+            </div>
           </div>
         </div>
 
-        <hr className="border-slate-200" />
-
-        {/* Glosa */}
-        {cot.glosa && (
-          <div className="bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-3">
-            <p className="text-xs font-semibold uppercase tracking-wider text-indigo-400 mb-1">Descripción del proyecto</p>
-            <p className="text-sm text-slate-700">{cot.glosa}</p>
-          </div>
-        )}
-
-        {/* Datos del cliente */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+        {/* EMPRESA + CLIENTE */}
+        <div className="grid grid-cols-2 gap-6 p-6 bg-slate-50 border-b border-slate-200">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Cotización para</p>
-            <p className="font-semibold text-slate-800">{cot.cliente}</p>
-            {(cot.direccion || cot.comuna) && (
-              <p className="text-sm text-slate-500 mt-1">
-                {[cot.direccion, cot.comuna].filter(Boolean).join(', ')}
-              </p>
-            )}
-            {cot.email && <p className="text-sm text-slate-500">{cot.email}</p>}
-            {cot.telefono && <p className="text-sm text-slate-500">{cot.telefono}</p>}
-
+            <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Emitido por</div>
+            <div className="font-semibold text-slate-800">{empresa?.nombre_fantasia || empresa?.nombre}</div>
+            {empresa?.rut && <div className="text-sm text-slate-600">RUT: {empresa.rut}</div>}
+            {(empresa?.email_contacto || empresa?.email) && <div className="text-sm text-slate-600">{empresa.email_contacto || empresa.email}</div>}
+            {empresa?.telefono && <div className="text-sm text-slate-600">{empresa.telefono}</div>}
+          </div>
+          <div>
+            <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Cotización para</div>
+            <div className="font-semibold text-slate-800">{cot.cliente}</div>
+            {cot.direccion && <div className="text-sm text-slate-600">{cot.direccion}{cot.comuna ? `, ${cot.comuna}` : ''}</div>}
+            {cot.email && <div className="text-sm text-slate-600">{cot.email}</div>}
+            {cot.telefono && <div className="text-sm text-slate-600">{cot.telefono}</div>}
             {cot.creadoPor && (
-              <div className="mt-4 flex items-center gap-2">
-                <div className="w-7 h-7 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0">
-                  <span className="text-[10px] font-bold text-indigo-600">
-                    {cot.creadoPor.split(' ').map((n) => n[0]).slice(0, 2).join('')}
-                  </span>
-                </div>
-                <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 leading-tight">Vendedor</p>
-                  <p className="text-sm text-slate-700">{cot.creadoPor}</p>
-                </div>
-              </div>
+              <div className="text-sm text-slate-500 mt-2">Vendedor: {cot.creadoPor}</div>
             )}
           </div>
-          <div className="flex sm:justify-end items-start gap-5">
-            <div className="text-center">
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center mx-auto ${cot.enviadoWhatsapp ? 'bg-emerald-100' : 'bg-slate-100'}`}>
-                <MessageCircle className={`w-4 h-4 ${cot.enviadoWhatsapp ? 'text-emerald-600' : 'text-slate-300'}`} />
-              </div>
-              <p className="text-xs text-slate-400 mt-1">WhatsApp</p>
-            </div>
-            <div className="text-center">
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center mx-auto ${cot.enviadoEmail ? 'bg-blue-100' : 'bg-slate-100'}`}>
-                <Mail className={`w-4 h-4 ${cot.enviadoEmail ? 'text-blue-600' : 'text-slate-300'}`} />
-              </div>
-              <p className="text-xs text-slate-400 mt-1">Email</p>
-            </div>
-          </div>
         </div>
+
+        {/* CUERPO del documento */}
+        <div className="p-6 space-y-6">
+          {/* Descripción del proyecto */}
+          {cot.glosa && (
+            <div className="p-4 rounded-lg border-l-4" style={{ borderColor: '#FF6B35', background: '#FFF8F5' }}>
+              <div className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#FF6B35' }}>Descripción del Proyecto</div>
+              <div className="text-sm text-slate-700">{cot.glosa}</div>
+            </div>
+          )}
 
         {/* Tabla de ítems */}
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-slate-50 rounded-lg">
-                <th className="text-left px-3 py-2.5 text-xs font-semibold text-slate-500 rounded-l-lg w-1/2">Producto / Servicio</th>
-                <th className="text-center px-3 py-2.5 text-xs font-semibold text-slate-500">Cant.</th>
-                <th className="text-center px-3 py-2.5 text-xs font-semibold text-slate-500">Medida</th>
-                <th className="text-right px-3 py-2.5 text-xs font-semibold text-slate-500">Valor Neto</th>
-                <th className="text-right px-3 py-2.5 text-xs font-semibold text-slate-500 rounded-r-lg">Subtotal</th>
+              <tr className="text-xs font-semibold uppercase" style={{ background: '#1a1a2e', color: 'white' }}>
+                <th className="text-left px-3 py-2.5 rounded-l-lg w-1/2">Producto / Servicio</th>
+                <th className="text-center px-3 py-2.5">Cant.</th>
+                <th className="text-center px-3 py-2.5">Medida</th>
+                <th className="text-right px-3 py-2.5">Valor Neto</th>
+                <th className="text-right px-3 py-2.5 rounded-r-lg">Subtotal</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody>
               {cot.items.map((item, idx) => (
-                <tr key={idx}>
+                <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
                   <td className="px-3 py-3">
                     <p className="font-medium text-slate-800">{item.producto}</p>
                     {item.incluirDescripcion && item.descripcion && (
@@ -765,8 +738,15 @@ export default function CotizacionDetalle() {
           )
         })()}
 
-        <div className="pt-4 border-t border-slate-100 text-xs text-slate-400 text-center">
-          Este documento es una cotización y no constituye una factura. Válida por 15 días desde su emisión.
+        </div>
+
+        {/* FOOTER — gradiente oscuro con formas abstractas */}
+        <div className="relative overflow-hidden rounded-b-lg" style={{ background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)', padding: '16px 24px' }}>
+          <div style={{ position: 'absolute', bottom: '-30px', left: '-30px', width: '120px', height: '120px', borderRadius: '50%', background: 'rgba(76,175,80,0.3)' }} />
+          <div style={{ position: 'absolute', bottom: '10px', left: '60px', width: '60px', height: '60px', borderRadius: '50%', background: 'rgba(255,193,7,0.2)' }} />
+          <div className="relative z-10 text-center text-blue-200 text-xs">
+            Este documento es una cotización y no constituye una factura. Válida por 15 días desde su emisión.
+          </div>
         </div>
       </div>
 
