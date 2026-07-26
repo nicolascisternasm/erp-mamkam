@@ -102,7 +102,10 @@ router.post('/webhook', async (req, res) => {
 
           // Guarda todos los campos no estándar del formulario en datos_adicionales
           const camposEstandar = ['full_name', 'email', 'phone_number', 'phone',
-                                  'nombre', 'telefono', 'first_name', 'last_name']
+                                  'nombre', 'telefono', 'first_name', 'last_name',
+                                  'correo_electrónico', 'correo_electronico', 'correo',
+                                  'número_de_teléfono', 'numero_de_telefono',
+                                  'nombre_completo']
           const datosAdicionales = {}
           for (const [key, val] of Object.entries(map)) {
             if (!camposEstandar.some(c => key.toLowerCase().includes(c))) {
@@ -112,9 +115,23 @@ router.post('/webhook', async (req, res) => {
 
           const registro = {
             empresa_id:        process.env.META_EMPRESA_ID,
-            nombre:            map.full_name || map.nombre || 'Sin nombre',
-            email:             map.email || null,
-            telefono:          map.phone_number || map.telefono || null,
+            nombre:            map.full_name ||
+                               `${map.first_name || ''} ${map.last_name || ''}`.trim() ||
+                               map.nombre ||
+                               map.nombre_completo ||
+                               'Sin nombre',
+            email:             map.email ||
+                               map.correo_electrónico ||
+                               map.correo_electronico ||
+                               map.correo ||
+                               null,
+            telefono:          map.phone_number ||
+                               map.phone ||
+                               map['número_de_teléfono'] ||
+                               map.numero_de_telefono ||
+                               map.teléfono ||
+                               map.telefono ||
+                               null,
             mensaje:           extraerMensaje(map),
             fuente:            'meta_leads',
             fuente_detalle:    formName || formId || null,
