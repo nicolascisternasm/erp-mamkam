@@ -645,6 +645,9 @@ export default function CotizacionDetalle() {
                     const monto        = cp.monto || Math.round(cot.total * cp.porcentaje / 100)
                     const conciliado   = !!cp.movimiento_id
                     const tieneFactura = !!cp.factura_sii_id
+                    const totalPagado  = (cp.comprobantes || []).reduce((s, c) => s + (Number(c.monto) || 0), 0)
+                    const progreso     = monto > 0 ? Math.min((totalPagado / monto) * 100, 100) : 0
+                    const saldo        = monto - totalPagado
                     return (
                       <div
                         key={cp.id || i}
@@ -661,6 +664,35 @@ export default function CotizacionDetalle() {
                           </div>
                           <span className="text-sm font-bold text-slate-900 flex-shrink-0">{formatCLP(monto)}</span>
                         </div>
+
+                        {/* Estado de pago */}
+                        <div className="mt-2 pl-7">
+                          {totalPagado > 0 ? (
+                            <>
+                              <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full ${totalPagado >= monto ? 'bg-emerald-500' : 'bg-amber-400'}`}
+                                  style={{ width: `${progreso}%` }}
+                                />
+                              </div>
+                              <div className="flex items-center justify-between gap-2 mt-1.5 flex-wrap">
+                                <span className="text-xs font-semibold text-emerald-600">Pagado: {formatCLP(totalPagado)}</span>
+                                {totalPagado >= monto && saldo === 0 && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">✓ Pagado</span>
+                                )}
+                                {saldo > 0 && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700">Pendiente: {formatCLP(saldo)}</span>
+                                )}
+                                {saldo < 0 && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">Exceso: {formatCLP(Math.abs(saldo))}</span>
+                                )}
+                              </div>
+                            </>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-500">Pendiente</span>
+                          )}
+                        </div>
+
                         {conciliado && !tieneFactura && (
                           <div className="flex items-center justify-between mt-2 pl-7">
                             <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-700">

@@ -190,7 +190,7 @@ export default function ComprobantesCotizacion({ cot, onUpdate }) {
       ]
       const newCondiciones = (cot.condicionesPago || []).map((cp) =>
         String(cp.id) === String(condicionId)
-          ? { ...cp, pagado: true, estado: 'pagado', comprobantes: [...(cp.comprobantes || []), { url, fecha_subida: new Date().toISOString(), movimiento_id: movId }] }
+          ? { ...cp, pagado: true, estado: 'pagado', comprobantes: [...(cp.comprobantes || []), { url, fecha_subida: new Date().toISOString(), movimiento_id: movId, monto: montoNum }] }
           : cp
       )
       await apiClient.patch(`/cotizaciones/${cot.id}`, {
