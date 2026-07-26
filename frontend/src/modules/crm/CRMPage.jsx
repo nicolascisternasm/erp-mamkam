@@ -151,7 +151,7 @@ export default function CRMPage() {
                   <th className="table-th">Nombre</th>
                   <th className="table-th">Email</th>
                   <th className="table-th">Teléfono</th>
-                  <th className="table-th">Fuente</th>
+                  <th className="table-th">Producto</th>
                   <th className="table-th">Estado</th>
                   <th className="table-th">Fecha</th>
                 </tr>
@@ -159,7 +159,6 @@ export default function CRMPage() {
               <tbody className="divide-y divide-slate-50">
                 {filtrados.map((c) => {
                   const est = ESTADO_META[c.estado] || { label: c.estado, color: 'bg-slate-100 text-slate-600' }
-                  const fte = fuenteMeta(c.fuente)
                   return (
                     <tr
                       key={c.id}
@@ -169,9 +168,7 @@ export default function CRMPage() {
                       <td className="table-td text-sm font-medium text-slate-800">{c.nombre}</td>
                       <td className="table-td text-xs text-slate-500">{c.email || '—'}</td>
                       <td className="table-td text-xs text-slate-500">{c.telefono || '—'}</td>
-                      <td className="table-td text-xs text-slate-600">
-                        <span title={fte.label}>{fte.icon} {fte.label}</span>
-                      </td>
+                      <td className="table-td text-xs text-slate-600">{c.producto || '—'}</td>
                       <td className="table-td">
                         <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${est.color}`}>
                           {est.label}

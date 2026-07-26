@@ -15,6 +15,8 @@ const fromCliente = (r) => ({
   fuente:           r.fuente,
   fuenteDetalle:    r.fuente_detalle,
   formId:           r.form_id,
+  producto:         r.crm_formularios?.producto || null,
+  nombreFormulario: r.crm_formularios?.nombre_formulario || null,
   datosAdicionales: r.datos_adicionales,
   estado:           r.estado,
   createdAt:        r.created_at,
@@ -224,7 +226,7 @@ router.get('/clientes', async (req, res) => {
   const empresaId = req.user.empresa_id
   const { data, error } = await supabase
     .from('clientes')
-    .select('*')
+    .select('*, crm_formularios(producto, nombre_formulario)')
     .eq('empresa_id', empresaId)
     .order('created_at', { ascending: false })
   if (error) {
