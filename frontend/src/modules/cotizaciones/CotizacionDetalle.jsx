@@ -14,6 +14,7 @@ import {
   MapPin, Play, X, Search, AlertCircle,
 } from 'lucide-react'
 import { supabase } from '../../services/supabase'
+import ComprobantesCotizacion from './ComprobantesCotizacion'
 
 function buildPublicUrl(cot, empresa) {
   const lean = {
@@ -102,6 +103,9 @@ export default function CotizacionDetalle() {
   }
 
   const cot = cotizaciones.find((c) => c.id === id)
+
+  // Refresca la cotización tras un cambio de comprobantes (actualiza el context)
+  const handleComprobanteUpdate = (cambios) => updateCotizacion(id, cambios)
 
   useEffect(() => {
     console.log('[CotizacionDetalle] user.empresa:', JSON.stringify(user?.empresa, null, 2))
@@ -727,6 +731,12 @@ export default function CotizacionDetalle() {
             </div>
           )
         })()}
+
+        {/* Gestión de comprobantes de pago (interactivo — no va al PDF) */}
+        <div className="no-print">
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Comprobantes de pago</p>
+          <ComprobantesCotizacion cot={cot} onUpdate={handleComprobanteUpdate} />
+        </div>
 
         {/* Observaciones */}
         {cot.observaciones && (

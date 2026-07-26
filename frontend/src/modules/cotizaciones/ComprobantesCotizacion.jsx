@@ -153,7 +153,7 @@ export default function ComprobantesCotizacion({ cot, onUpdate }) {
         pagos_comprobantes: newPagos,
         condiciones_pago:   newCondiciones,
       })
-      onUpdate?.()
+      onUpdate?.({ pagosComprobantes: newPagos, condicionesPago: newCondiciones })
       setConfirmElimComp(null)
     } catch (err) {
       console.error('Error al eliminar comprobante:', err)
@@ -197,7 +197,7 @@ export default function ComprobantesCotizacion({ cot, onUpdate }) {
         pagos_comprobantes: newPagos,
         condiciones_pago:   newCondiciones,
       })
-      onUpdate?.()
+      onUpdate?.({ pagosComprobantes: newPagos, condicionesPago: newCondiciones })
       setFormConfirmacion(null)
       setEstadoModalComp('idle')
       setToastComp('Comprobante registrado y movimiento contable creado')
