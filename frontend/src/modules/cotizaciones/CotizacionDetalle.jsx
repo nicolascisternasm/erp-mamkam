@@ -646,7 +646,9 @@ export default function CotizacionDetalle() {
                     const monto        = cp.monto || Math.round(cot.total * cp.porcentaje / 100)
                     const conciliado   = !!cp.movimiento_id
                     const tieneFactura = !!cp.factura_sii_id
-                    const totalPagado  = (cp.comprobantes || []).reduce((s, c) => s + (Number(c.monto) || 0), 0)
+                    const totalPagado  = (cot.pagosComprobantes || [])
+                      .filter((p) => String(p.condicion_id) === String(cp.id))
+                      .reduce((sum, p) => sum + (Number(p.monto) || 0), 0)
                     const progreso     = monto > 0 ? Math.min((totalPagado / monto) * 100, 100) : 0
                     const saldo        = monto - totalPagado
                     return (
@@ -693,6 +695,23 @@ export default function CotizacionDetalle() {
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-500">Pendiente</span>
                           )}
                         </div>
+
+                        {/* Resumen de pago */}
+                        {totalPagado > 0 && (
+                          <div className="mt-2 pl-7 text-sm space-y-1">
+                            <div className="flex justify-between">
+                              <span className="text-slate-500">Total pagado</span>
+                              <span className="font-semibold text-emerald-600">{formatCLP(totalPagado)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-slate-500">{formatCLP(monto)} acordado</span>
+                              {totalPagado > monto
+                                ? <span className="text-blue-600 font-semibold">Exceso: {formatCLP(totalPagado - monto)}</span>
+                                : <span className="text-amber-600 font-semibold">Pendiente: {formatCLP(monto - totalPagado)}</span>
+                              }
+                            </div>
+                          </div>
+                        )}
 
                         {/* Botón comprobantes (no sale en el PDF) */}
                         {(() => {

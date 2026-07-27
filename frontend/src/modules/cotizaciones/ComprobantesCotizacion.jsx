@@ -188,7 +188,7 @@ const ComprobantesCotizacion = forwardRef(function ComprobantesCotizacion({ cot,
 
       const newPagos = [
         ...(cot.pagosComprobantes || []),
-        { condicion_id: condicionId, url, nombre: fileName, fecha, movimiento_id: movId },
+        { condicion_id: condicionId, url, nombre: fileName, fecha, movimiento_id: movId, monto: montoNum },
       ]
       const newCondiciones = (cot.condicionesPago || []).map((cp) =>
         String(cp.id) === String(condicionId)
