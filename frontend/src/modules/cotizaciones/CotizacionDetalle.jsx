@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '../../services/supabase'
 import ComprobantesCotizacion from './ComprobantesCotizacion'
+import OrdenesCompraCliente from './OrdenesCompraCliente'
 
 function buildPublicUrl(cot, empresa) {
   const lean = {
@@ -80,6 +81,7 @@ export default function CotizacionDetalle() {
   const { user } = useAuth()
   const docRef = useRef(null)
   const comprobantesRef = useRef(null)
+  const ocClienteRef = useRef(null)
 
   const [loadingPDF, setLoadingPDF] = useState(false)
   const [loadingEmail, setLoadingEmail] = useState(false)
@@ -774,6 +776,64 @@ export default function CotizacionDetalle() {
           )
         })()}
 
+        {/* Órdenes de Compra del Cliente */}
+        {(() => {
+          const ordenes = cot.ordenesCompraCliente || []
+          const badgeOC = (e) =>
+            e === 'facturada' ? 'bg-emerald-100 text-emerald-700'
+            : e === 'aprobada' ? 'bg-blue-100 text-blue-700'
+            : 'bg-slate-100 text-slate-600'
+          const fmtFechaOC = (f) => {
+            if (!f) return ''
+            const [y, m, d] = String(f).split('T')[0].split('-')
+            return d && m && y ? `${d}/${m}/${y}` : f
+          }
+          return (
+            <div>
+              {/* Botón agregar OC — no sale en el PDF */}
+              <div className="flex items-center justify-between mb-2" data-html2canvas-ignore="true">
+                <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Órdenes de compra del cliente</p>
+                <button
+                  onClick={() => ocClienteRef.current?.abrir()}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 hover:text-indigo-600 hover:border-indigo-200 transition-colors"
+                >
+                  📋 Agregar OC
+                </button>
+              </div>
+
+              {/* Tabla de OC — aparece en el PDF; solo si hay OC */}
+              {ordenes.length > 0 && (
+                <div className="border border-slate-200 rounded-xl overflow-hidden" style={{ pageBreakInside: 'avoid', breakInside: 'avoid' }}>
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-slate-50 text-slate-500">
+                        <th className="text-left font-semibold uppercase tracking-wider text-xs px-3 py-2">N° OC</th>
+                        <th className="text-left font-semibold uppercase tracking-wider text-xs px-3 py-2">Empresa</th>
+                        <th className="text-left font-semibold uppercase tracking-wider text-xs px-3 py-2">Fecha</th>
+                        <th className="text-right font-semibold uppercase tracking-wider text-xs px-3 py-2">Monto</th>
+                        <th className="text-center font-semibold uppercase tracking-wider text-xs px-3 py-2">Estado</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ordenes.map((oc) => (
+                        <tr key={oc.id} className="border-t border-slate-100">
+                          <td className="px-3 py-2 font-medium text-slate-700">{oc.numero_oc || '—'}</td>
+                          <td className="px-3 py-2 text-slate-600">{oc.empresa_emisora || '—'}</td>
+                          <td className="px-3 py-2 text-slate-500">{fmtFechaOC(oc.fecha_oc)}</td>
+                          <td className="px-3 py-2 text-right font-semibold text-slate-800">{formatCLP(oc.monto)}</td>
+                          <td className="px-3 py-2 text-center">
+                            <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${badgeOC(oc.estado)}`}>{oc.estado}</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )
+        })()}
+
         {/* Observaciones */}
         {cot.observaciones && (
           <div className="bg-slate-50 rounded-xl p-4">
@@ -817,6 +877,7 @@ export default function CotizacionDetalle() {
           Fuera del docRef (no-print) para que el modal no salga en el PDF. */}
       <div className="no-print">
         <ComprobantesCotizacion ref={comprobantesRef} cot={cot} onUpdate={handleComprobanteUpdate} />
+        <OrdenesCompraCliente ref={ocClienteRef} cot={cot} onUpdate={handleComprobanteUpdate} />
       </div>
 
       {/* Modal envío de email */}
