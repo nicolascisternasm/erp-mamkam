@@ -11,7 +11,7 @@ import { ConfirmModal } from '../../components/Modal'
 import {
   ArrowLeft, Pencil, Trash2, MessageCircle, Mail, Download,
   ShoppingCart, CheckCircle, XCircle, Send, Loader2, ChevronRight,
-  MapPin, Play, X, Search, AlertCircle,
+  MapPin, Play, X, Search, AlertCircle, Paperclip,
 } from 'lucide-react'
 import { supabase } from '../../services/supabase'
 import ComprobantesCotizacion from './ComprobantesCotizacion'
@@ -79,6 +79,7 @@ export default function CotizacionDetalle() {
   const { cotizaciones, updateCotizacion, deleteCotizacion, changeCotizacionStatus, addCompra, empresa } = useApp()
   const { user } = useAuth()
   const docRef = useRef(null)
+  const comprobantesRef = useRef(null)
 
   const [loadingPDF, setLoadingPDF] = useState(false)
   const [loadingEmail, setLoadingEmail] = useState(false)
@@ -693,6 +694,23 @@ export default function CotizacionDetalle() {
                           )}
                         </div>
 
+                        {/* Botón comprobantes (no sale en el PDF) */}
+                        {(() => {
+                          const nComp = (cot.pagosComprobantes || []).filter((p) => String(p.condicion_id) === String(cp.id)).length
+                          return (
+                            <div className="mt-2 pl-7" data-html2canvas-ignore="true">
+                              <button
+                                onClick={() => comprobantesRef.current?.abrir(cp.id, cp.descripcion, monto)}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 hover:text-indigo-600 hover:border-indigo-200 transition-colors"
+                              >
+                                <Paperclip className="w-3.5 h-3.5" />
+                                Comprobantes
+                                <span className={`ml-0.5 px-1.5 rounded-full text-xs font-semibold ${nComp > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{nComp}</span>
+                              </button>
+                            </div>
+                          )
+                        })()}
+
                         {conciliado && !tieneFactura && (
                           <div className="flex items-center justify-between mt-2 pl-7">
                             <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-700">
@@ -776,10 +794,10 @@ export default function CotizacionDetalle() {
         </div>
       </div>
 
-      {/* Comprobantes de pago — fuera del docRef para que no salga en el PDF */}
-      <div className="card p-5 no-print">
-        <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Comprobantes de pago</p>
-        <ComprobantesCotizacion cot={cot} onUpdate={handleComprobanteUpdate} />
+      {/* Comprobantes de pago — modal invisible; se abre desde el botón 📎 de cada condición.
+          Fuera del docRef (no-print) para que el modal no salga en el PDF. */}
+      <div className="no-print">
+        <ComprobantesCotizacion ref={comprobantesRef} cot={cot} onUpdate={handleComprobanteUpdate} />
       </div>
 
       {/* Modal envío de email */}

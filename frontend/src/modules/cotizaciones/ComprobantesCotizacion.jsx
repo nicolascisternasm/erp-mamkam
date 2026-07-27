@@ -1,11 +1,11 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import { supabase } from '../../services/supabase'
 import { formatCLP } from '../../utils/formatters'
 import { apiClient } from '../../services/apiClient'
 import Modal from '../../components/Modal'
 import {
-  Plus, Eye, Trash2, FileText, Loader2, Paperclip, AlertTriangle, CheckCircle2,
+  Plus, Eye, Trash2, FileText, Loader2, AlertTriangle, CheckCircle2,
 } from 'lucide-react'
 
 /*
@@ -14,11 +14,13 @@ import {
  *   - cot: la cotización (con condicionesPago y pagosComprobantes)
  *   - onUpdate: callback que el padre usa para refrescar la cotización tras cambios
  *
- * Renderiza un botón/trigger por condición de pago (o un único trigger para
- * "pago único") y contiene todo el flujo de subida → análisis IA → confirmación,
- * más el listado y borrado de comprobantes.
+ * Solo renderiza el modal (invisible hasta que el padre llama abrir() vía ref);
+ * contiene todo el flujo de subida → análisis IA → confirmación, más el listado
+ * y borrado de comprobantes. El trigger vive en el componente padre, que abre el
+ * modal de una condición específica mediante el handle imperativo:
+ *   comprobantesRef.current?.abrir(condicionId, descripcion, monto)
  */
-export default function ComprobantesCotizacion({ cot, onUpdate }) {
+const ComprobantesCotizacion = forwardRef(function ComprobantesCotizacion({ cot, onUpdate }, ref) {
   const { user } = useAuth()
 
   const fileRef = useRef(null)
@@ -208,51 +210,15 @@ export default function ComprobantesCotizacion({ cot, onUpdate }) {
     }
   }
 
-  /* ── Triggers por condición ────────────────────────────────── */
+  /* ── Handle imperativo: el padre abre el modal de una condición ── */
 
   const abrir = (condicionId, descripcion, monto) =>
     setModalComprobantes({ condicionId: String(condicionId), descripcion, monto })
 
-  const condiciones = cot.condicionesPago || []
-
-  const contarComprobantes = (condicionId) =>
-    (cot.pagosComprobantes || []).filter((p) => String(p.condicion_id) === String(condicionId)).length
+  useImperativeHandle(ref, () => ({ abrir }), [])
 
   return (
     <>
-      <div className="space-y-2">
-        {condiciones.length === 0 ? (
-          <button
-            onClick={() => abrir('default', 'Pago único', cot.total || 0)}
-            className="btn-secondary text-sm w-full justify-between"
-          >
-            <span className="flex items-center gap-2"><Paperclip className="w-4 h-4" /> Comprobantes de pago</span>
-            {contarComprobantes('default') > 0 && (
-              <span className="text-xs bg-indigo-100 text-indigo-700 px-1.5 rounded-full">{contarComprobantes('default')}</span>
-            )}
-          </button>
-        ) : (
-          condiciones.map((cp, i) => {
-            const monto = cp.monto || Math.round((cot.total || 0) * (cp.porcentaje || 0) / 100)
-            const n = contarComprobantes(cp.id)
-            return (
-              <button
-                key={cp.id || i}
-                onClick={() => abrir(cp.id, cp.descripcion || 'Condición', monto)}
-                className="btn-secondary text-sm w-full justify-between"
-              >
-                <span className="flex items-center gap-2">
-                  <Paperclip className="w-4 h-4" />
-                  {cp.descripcion || `Condición ${i + 1}`}
-                  {cp.pagado && <span className="text-xs font-semibold text-emerald-600">· Pagado</span>}
-                </span>
-                {n > 0 && <span className="text-xs bg-indigo-100 text-indigo-700 px-1.5 rounded-full">{n}</span>}
-              </button>
-            )
-          })
-        )}
-      </div>
-
       {/* Modal: comprobantes de pago */}
       {modalComprobantes && (() => {
         const { condicionId, descripcion } = modalComprobantes
@@ -503,4 +469,6 @@ export default function ComprobantesCotizacion({ cot, onUpdate }) {
       })()}
     </>
   )
-}
+})
+
+export default ComprobantesCotizacion
