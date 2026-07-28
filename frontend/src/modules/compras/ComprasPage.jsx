@@ -26,6 +26,194 @@ const ESTADO_META = {
   cerrada:   { color: 'text-emerald-600 bg-emerald-50 border-emerald-100', icon: Lock         },
 }
 
+function ModalDocumentos({
+  oc, tipo, onClose,
+  estadoModalComp, setEstadoModalComp,
+  formConfirmacionOC, setFormConfirmacionOC,
+  addComprobanteRef, addFacturaRef,
+  uploading, handleConfirmarOC, setConfirmDeleteDoc,
+}) {
+  if (!oc) return null
+  const docs   = tipo === 'comprobante' ? (oc.comprobantes || []) : (oc.facturas || [])
+  const titulo = tipo === 'comprobante' ? 'Comprobantes de pago' : 'Facturas del proveedor'
+  const ref    = tipo === 'comprobante' ? addComprobanteRef : addFacturaRef
+  const isProcessing = tipo === 'comprobante' && (estadoModalComp === 'subiendo' || estadoModalComp === 'analizando' || estadoModalComp === 'guardando')
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      onClick={isProcessing ? undefined : onClose}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col max-h-[80vh]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
+          <div>
+            <p className="font-semibold text-slate-900 text-sm">{titulo}</p>
+            <p className="text-xs text-slate-500 font-mono mt-0.5">{oc.numero}</p>
+          </div>
+          {!isProcessing && (
+            <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors">
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+
+        {/* Spinner: subiendo / analizando / guardando */}
+        {isProcessing && (
+          <div className="flex-1 flex flex-col items-center justify-center gap-3 py-12">
+            <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
+            <p className="text-sm text-slate-500">
+              {estadoModalComp === 'subiendo' ? 'Subiendo archivo...'
+                : estadoModalComp === 'analizando' ? 'Analizando comprobante con IA...'
+                : 'Guardando movimiento contable...'}
+            </p>
+          </div>
+        )}
+
+        {/* Formulario confirmación (comprobante) */}
+        {tipo === 'comprobante' && estadoModalComp === 'confirmando' && formConfirmacionOC && (
+          <div className="flex-1 overflow-y-auto p-5 space-y-3">
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-indigo-50 border border-indigo-100 text-xs text-indigo-700">
+              <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />
+              Datos extraídos automáticamente — verifica y confirma
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Monto</label>
+                <input
+                  type="number"
+                  value={formConfirmacionOC.monto}
+                  onChange={(e) => setFormConfirmacionOC((f) => ({ ...f, monto: e.target.value }))}
+                  className="input-base text-sm w-full"
+                  placeholder="0"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Fecha</label>
+                <input
+                  type="date"
+                  value={formConfirmacionOC.fecha}
+                  onChange={(e) => setFormConfirmacionOC((f) => ({ ...f, fecha: e.target.value }))}
+                  className="input-base text-sm w-full"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Banco origen</label>
+                <input
+                  type="text"
+                  value={formConfirmacionOC.banco_origen}
+                  onChange={(e) => setFormConfirmacionOC((f) => ({ ...f, banco_origen: e.target.value }))}
+                  className="input-base text-sm w-full"
+                  placeholder="—"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">N° operación</label>
+                <input
+                  type="text"
+                  value={formConfirmacionOC.numero_transferencia}
+                  onChange={(e) => setFormConfirmacionOC((f) => ({ ...f, numero_transferencia: e.target.value }))}
+                  className="input-base text-sm w-full"
+                  placeholder="—"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Descripción</label>
+              <input
+                type="text"
+                value={formConfirmacionOC.glosa}
+                onChange={(e) => setFormConfirmacionOC((f) => ({ ...f, glosa: e.target.value }))}
+                className="input-base text-sm w-full"
+              />
+            </div>
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={() => { setFormConfirmacionOC(null); setEstadoModalComp('idle') }}
+                className="flex-1 btn-ghost text-xs"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleConfirmarOC}
+                disabled={!formConfirmacionOC.monto || !formConfirmacionOC.fecha}
+                className="flex-1 btn-primary text-xs disabled:opacity-50"
+              >
+                Confirmar y registrar movimiento
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Vista idle — lista + botón agregar */}
+        {(tipo !== 'comprobante' || estadoModalComp === 'idle') && (
+          <>
+            <div className="overflow-y-auto flex-1 p-4">
+              {docs.length === 0 ? (
+                <div className="py-10 text-center">
+                  <FileText className="w-8 h-8 text-slate-200 mx-auto mb-2" />
+                  <p className="text-xs text-slate-400">No hay archivos adjuntos.</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {docs.map((doc, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-100"
+                    >
+                      <FileText className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-slate-700 truncate">{doc.nombre}</p>
+                        {doc.fecha && <p className="text-xs text-slate-400">{formatDate(doc.fecha)}</p>}
+                        {tipo === 'comprobante' && (
+                          doc.movimiento_id
+                            ? <span className="text-[10px] text-emerald-600 font-medium">✓ Movimiento contable registrado</span>
+                            : <span className="inline-block mt-0.5 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-medium">Sin registro contable</span>
+                        )}
+                      </div>
+                      <a
+                        href={doc.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors flex-shrink-0"
+                        title="Ver archivo"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                      </a>
+                      <button
+                        onClick={() => setConfirmDeleteDoc({ tipo, ocId: oc.id, url: doc.url, nombre: doc.nombre })}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors flex-shrink-0"
+                        title="Eliminar"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="px-4 py-3 border-t border-slate-100">
+              <button
+                onClick={() => ref.current?.click()}
+                disabled={tipo !== 'comprobante' && uploading}
+                className="btn-primary w-full justify-center disabled:opacity-50"
+              >
+                {tipo !== 'comprobante' && uploading
+                  ? <Loader2 className="w-4 h-4 animate-spin" />
+                  : <Plus className="w-4 h-4" />}
+                {tipo !== 'comprobante' && uploading ? 'Subiendo...' : 'Agregar archivo'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function ComprasPage() {
   const { compras, cotizaciones, deleteCompra, updateCompra, empresa } = useApp()
   const { user } = useAuth()
@@ -199,31 +387,32 @@ export default function ComprasPage() {
     let pdfUrl = null
     try {
       /* 1. Generar PDF de la OC */
-      setGenerandoPdfId(oc.id)
-      setOcParaPdf(oc)
-      await new Promise(r => setTimeout(r, 400))
+      try {
+        setGenerandoPdfId(oc.id)
+        setOcParaPdf(oc)
+        await new Promise(r => setTimeout(r, 400))
 
-      if (ocPdfRef.current) {
-        const pdfBlob  = await generatePDFBlob(ocPdfRef.current)
-        const empresaId = empresa?.id || user?.empresa_id
-        const path      = `${empresaId}/${oc.numero}.pdf`
-        const { error: upErr } = await supabase.storage
-          .from('ocs-pdf')
-          .upload(path, pdfBlob, { contentType: 'application/pdf', upsert: true })
-        if (!upErr) {
-          pdfUrl = supabase.storage.from('ocs-pdf').getPublicUrl(path).data.publicUrl
-        } else {
-          console.error('[doEnviarEmail] error subiendo PDF:', upErr.message)
+        if (ocPdfRef.current) {
+          const pdfBlob   = await generatePDFBlob(ocPdfRef.current)
+          const empresaId = empresa?.id || user?.empresa_id
+          const path      = `${empresaId}/${oc.numero}.pdf`
+          const { error: upErr } = await supabase.storage
+            .from('ocs-pdf')
+            .upload(path, pdfBlob, { contentType: 'application/pdf', upsert: true })
+          if (!upErr) {
+            pdfUrl = supabase.storage.from('ocs-pdf').getPublicUrl(path).data.publicUrl
+          } else {
+            console.error('[doEnviarEmail] error subiendo PDF:', upErr.message)
+          }
         }
+      } catch (pdfErr) {
+        console.error('[doEnviarEmail] error generando PDF:', pdfErr.message)
+        showToast('error', 'No se pudo generar el PDF. Se enviará el correo sin adjunto.')
+      } finally {
+        setOcParaPdf(null)
+        setGenerandoPdfId(null)
       }
-    } catch (pdfErr) {
-      console.error('[doEnviarEmail] error generando PDF:', pdfErr.message)
-    } finally {
-      setOcParaPdf(null)
-      setGenerandoPdfId(null)
-    }
 
-    try {
       /* 2. Enviar email con pdfUrl */
       const stored = localStorage.getItem('mamkam_auth')
       const token  = stored ? JSON.parse(stored).token : null
@@ -262,189 +451,6 @@ export default function ComprasPage() {
   const sinOC = cotizaciones.filter(
     (c) => c.estado === 'aprobada' && !compras.some((oc) => oc.cotizacionId === c.id)
   )
-
-  /* ── Modal de documentos ─────────────────────────────────────────── */
-  const ModalDocumentos = ({ oc, tipo, onClose }) => {
-    if (!oc) return null
-    const docs   = tipo === 'comprobante' ? (oc.comprobantes || []) : (oc.facturas || [])
-    const titulo = tipo === 'comprobante' ? 'Comprobantes de pago' : 'Facturas del proveedor'
-    const ref    = tipo === 'comprobante' ? addComprobanteRef : addFacturaRef
-    const isProcessing = tipo === 'comprobante' && (estadoModalComp === 'subiendo' || estadoModalComp === 'analizando' || estadoModalComp === 'guardando')
-
-    return (
-      <div
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-        onClick={isProcessing ? undefined : onClose}
-      >
-        <div
-          className="bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col max-h-[80vh]"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* Header */}
-          <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
-            <div>
-              <p className="font-semibold text-slate-900 text-sm">{titulo}</p>
-              <p className="text-xs text-slate-500 font-mono mt-0.5">{oc.numero}</p>
-            </div>
-            {!isProcessing && (
-              <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors">
-                <X className="w-4 h-4" />
-              </button>
-            )}
-          </div>
-
-          {/* Spinner: subiendo / analizando / guardando */}
-          {isProcessing && (
-            <div className="flex-1 flex flex-col items-center justify-center gap-3 py-12">
-              <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
-              <p className="text-sm text-slate-500">
-                {estadoModalComp === 'subiendo' ? 'Subiendo archivo...'
-                  : estadoModalComp === 'analizando' ? 'Analizando comprobante con IA...'
-                  : 'Guardando movimiento contable...'}
-              </p>
-            </div>
-          )}
-
-          {/* Formulario confirmación (comprobante) */}
-          {tipo === 'comprobante' && estadoModalComp === 'confirmando' && formConfirmacionOC && (
-            <div className="flex-1 overflow-y-auto p-5 space-y-3">
-              <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-indigo-50 border border-indigo-100 text-xs text-indigo-700">
-                <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />
-                Datos extraídos automáticamente — verifica y confirma
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Monto</label>
-                  <input
-                    type="number"
-                    value={formConfirmacionOC.monto}
-                    onChange={(e) => setFormConfirmacionOC((f) => ({ ...f, monto: e.target.value }))}
-                    className="input-base text-sm w-full"
-                    placeholder="0"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Fecha</label>
-                  <input
-                    type="date"
-                    value={formConfirmacionOC.fecha}
-                    onChange={(e) => setFormConfirmacionOC((f) => ({ ...f, fecha: e.target.value }))}
-                    className="input-base text-sm w-full"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Banco origen</label>
-                  <input
-                    type="text"
-                    value={formConfirmacionOC.banco_origen}
-                    onChange={(e) => setFormConfirmacionOC((f) => ({ ...f, banco_origen: e.target.value }))}
-                    className="input-base text-sm w-full"
-                    placeholder="—"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">N° operación</label>
-                  <input
-                    type="text"
-                    value={formConfirmacionOC.numero_transferencia}
-                    onChange={(e) => setFormConfirmacionOC((f) => ({ ...f, numero_transferencia: e.target.value }))}
-                    className="input-base text-sm w-full"
-                    placeholder="—"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Descripción</label>
-                <input
-                  type="text"
-                  value={formConfirmacionOC.glosa}
-                  onChange={(e) => setFormConfirmacionOC((f) => ({ ...f, glosa: e.target.value }))}
-                  className="input-base text-sm w-full"
-                />
-              </div>
-              <div className="flex gap-2 pt-2">
-                <button
-                  onClick={() => { setFormConfirmacionOC(null); setEstadoModalComp('idle') }}
-                  className="flex-1 btn-ghost text-xs"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={handleConfirmarOC}
-                  disabled={!formConfirmacionOC.monto || !formConfirmacionOC.fecha}
-                  className="flex-1 btn-primary text-xs disabled:opacity-50"
-                >
-                  Confirmar y registrar movimiento
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Vista idle — lista + botón agregar */}
-          {(tipo !== 'comprobante' || estadoModalComp === 'idle') && (
-            <>
-              <div className="overflow-y-auto flex-1 p-4">
-                {docs.length === 0 ? (
-                  <div className="py-10 text-center">
-                    <FileText className="w-8 h-8 text-slate-200 mx-auto mb-2" />
-                    <p className="text-xs text-slate-400">No hay archivos adjuntos.</p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {docs.map((doc, i) => (
-                      <div
-                        key={i}
-                        className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-100"
-                      >
-                        <FileText className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-slate-700 truncate">{doc.nombre}</p>
-                          {doc.fecha && <p className="text-xs text-slate-400">{formatDate(doc.fecha)}</p>}
-                          {tipo === 'comprobante' && (
-                            doc.movimiento_id
-                              ? <span className="text-[10px] text-emerald-600 font-medium">✓ Movimiento contable registrado</span>
-                              : <span className="inline-block mt-0.5 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-medium">Sin registro contable</span>
-                          )}
-                        </div>
-                        <a
-                          href={doc.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors flex-shrink-0"
-                          title="Ver archivo"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                        </a>
-                        <button
-                          onClick={() => setConfirmDeleteDoc({ tipo, ocId: oc.id, url: doc.url, nombre: doc.nombre })}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors flex-shrink-0"
-                          title="Eliminar"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div className="px-4 py-3 border-t border-slate-100">
-                <button
-                  onClick={() => ref.current?.click()}
-                  disabled={tipo !== 'comprobante' && uploading}
-                  className="btn-primary w-full justify-center disabled:opacity-50"
-                >
-                  {tipo !== 'comprobante' && uploading
-                    ? <Loader2 className="w-4 h-4 animate-spin" />
-                    : <Plus className="w-4 h-4" />}
-                  {tipo !== 'comprobante' && uploading ? 'Subiendo...' : 'Agregar archivo'}
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-    )
-  }
 
   return (
     <div className="space-y-5 w-full">
@@ -699,6 +705,15 @@ export default function ComprasPage() {
         oc={modalComprobantesOC}
         tipo="comprobante"
         onClose={() => setModalComprobantesId(null)}
+        estadoModalComp={estadoModalComp}
+        setEstadoModalComp={setEstadoModalComp}
+        formConfirmacionOC={formConfirmacionOC}
+        setFormConfirmacionOC={setFormConfirmacionOC}
+        addComprobanteRef={addComprobanteRef}
+        addFacturaRef={addFacturaRef}
+        uploading={uploading}
+        handleConfirmarOC={handleConfirmarOC}
+        setConfirmDeleteDoc={setConfirmDeleteDoc}
       />
 
       {/* ── Modal facturas ─────────────────────────────────────────── */}
@@ -706,6 +721,15 @@ export default function ComprasPage() {
         oc={modalFacturasOC}
         tipo="factura"
         onClose={() => setModalFacturasId(null)}
+        estadoModalComp={estadoModalComp}
+        setEstadoModalComp={setEstadoModalComp}
+        formConfirmacionOC={formConfirmacionOC}
+        setFormConfirmacionOC={setFormConfirmacionOC}
+        addComprobanteRef={addComprobanteRef}
+        addFacturaRef={addFacturaRef}
+        uploading={uploading}
+        handleConfirmarOC={handleConfirmarOC}
+        setConfirmDeleteDoc={setConfirmDeleteDoc}
       />
 
       {/* Confirmar eliminar OC */}

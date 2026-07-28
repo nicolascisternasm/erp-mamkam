@@ -12,7 +12,7 @@ export async function generatePDFBlob(element) {
     logging: false,
     backgroundColor: '#ffffff',
     removeContainer: true,
-    imageTimeout: 0,
+    imageTimeout: 15000,
   })
 
   const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
