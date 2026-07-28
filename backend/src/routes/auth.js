@@ -23,6 +23,7 @@ function makeToken(user, rememberMe = false) {
     id: user.id,
     email: user.email,
     nombre: user.nombre,
+    apellidos: user.apellidos ?? null,
     rol: user.rol,
     empresa_id:           user.empresa_id           ?? null,
     app_activa:           user.app_activa           ?? false,
