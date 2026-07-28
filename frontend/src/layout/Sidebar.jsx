@@ -12,7 +12,7 @@ const NAV = [
       { to: '/dashboard',    icon: LayoutDashboard, label: 'Dashboard' },
       { to: '/cotizaciones', icon: FileText,         label: 'Cotizaciones',      permission: 'puede_cotizar' },
       { to: '/compras',      icon: ShoppingCart,     label: 'Órdenes de Compra', permission: 'puede_oc' },
-      { to: '/proveedores',  icon: Building2,        label: 'Proveedores',       permission: 'puede_oc' },
+      { to: '/proveedores',  icon: Building2,        label: 'Proveedores',       permission: 'puede_proveedores' },
     ],
   },
   {
@@ -30,7 +30,7 @@ const NAV = [
       { to: '/planificacion', icon: CalendarDays, label: 'Planificación', permission: 'puede_planificacion' },
       { to: '/visitas',       icon: ClipboardList, label: 'Visitas',      permission: 'puede_visitas' },
       { to: '/productos',     icon: Package,      label: 'Productos',     permission: 'puede_productos' },
-      { to: '/crm',           icon: Users2,       label: 'CRM',           adminOnly: true },
+      { to: '/crm',           icon: Users2,       label: 'CRM',           permission: 'puede_crm' },
     ],
   },
   {

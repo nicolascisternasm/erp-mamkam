@@ -60,8 +60,16 @@ export default function App() {
                 <Route path="/compras/nueva" element={<CompraForm />} />
                 <Route path="/compras/:id" element={<CompraDetalle />} />
                 <Route path="/compras/:id/editar" element={<CompraForm />} />
-                <Route path="/proveedores" element={<ProveedoresPage />} />
               </Route>
+
+              <Route
+                path="/proveedores"
+                element={
+                  <ProtectedRoute permission="puede_proveedores">
+                    <ProveedoresPage />
+                  </ProtectedRoute>
+                }
+              />
 
               <Route
                 path="/remuneraciones"
@@ -177,7 +185,7 @@ export default function App() {
               <Route
                 path="/crm"
                 element={
-                  <ProtectedRoute roles={['admin']}>
+                  <ProtectedRoute permission="puede_crm">
                     <CRMPage />
                   </ProtectedRoute>
                 }

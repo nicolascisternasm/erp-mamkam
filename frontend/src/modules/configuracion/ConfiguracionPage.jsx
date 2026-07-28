@@ -922,7 +922,7 @@ function TabAccesos() {
         puede_cotizar, puede_oc, puede_rrhh, puede_finanzas,
         puede_proyectos, puede_planificacion, puede_asesoria,
         puede_remuneraciones, puede_facturas, puede_productos,
-        puede_vacaciones,
+        puede_vacaciones, puede_crm, puede_proveedores,
         puede_gastos, puede_marcaciones`)
       .order('nombre')
 
@@ -975,8 +975,10 @@ function TabAccesos() {
       </div>
       <div style={{ borderRadius: '8px', border: '1px solid #f1f5f9', padding: '4px 12px' }}>
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1 mt-2">Comercial</p>
-        <WorkerToggle trabajadorId={t.id} campo="puede_cotizar" value={t.puede_cotizar ?? false} label="Cotizaciones"       description="Puede crear y gestionar cotizaciones"          saving={saving} saved={saved} onToggle={handleToggle} />
-        <WorkerToggle trabajadorId={t.id} campo="puede_oc"      value={t.puede_oc      ?? false} label="Órdenes de Compra"  description="Puede crear y gestionar órdenes de compra"     saving={saving} saved={saved} onToggle={handleToggle} />
+        <WorkerToggle trabajadorId={t.id} campo="puede_cotizar"     value={t.puede_cotizar     ?? false} label="Cotizaciones"       description="Puede crear y gestionar cotizaciones"               saving={saving} saved={saved} onToggle={handleToggle} />
+        <WorkerToggle trabajadorId={t.id} campo="puede_oc"          value={t.puede_oc          ?? false} label="Órdenes de Compra"  description="Puede crear y gestionar órdenes de compra"          saving={saving} saved={saved} onToggle={handleToggle} />
+        <WorkerToggle trabajadorId={t.id} campo="puede_crm"         value={t.puede_crm         ?? false} label="CRM"                description="Puede ver y gestionar clientes del CRM"             saving={saving} saved={saved} onToggle={handleToggle} />
+        <WorkerToggle trabajadorId={t.id} campo="puede_proveedores" value={t.puede_proveedores ?? false} label="Proveedores"        description="Puede ver y gestionar proveedores"                  saving={saving} saved={saved} onToggle={handleToggle} />
       </div>
       <div style={{ borderRadius: '8px', border: '1px solid #f1f5f9', padding: '4px 12px' }}>
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1 mt-2">Finanzas</p>

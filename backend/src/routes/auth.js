@@ -41,6 +41,8 @@ function makeToken(user, rememberMe = false) {
     puede_visitas:        user.puede_visitas        ?? false,
     puede_visitas_app:    user.puede_visitas_app    ?? false,
     puede_planificacion:  user.puede_planificacion  ?? false,
+    puede_crm:            user.puede_crm            ?? false,
+    puede_proveedores:    user.puede_proveedores    ?? false,
   }
   const expiresIn = rememberMe ? '30d' : (process.env.JWT_EXPIRES_IN || '7d')
   return jwt.sign(payload, process.env.JWT_SECRET, { expiresIn })
@@ -49,7 +51,7 @@ function makeToken(user, rememberMe = false) {
 async function getPermisos(usuarioId) {
   const { data } = await supabase
     .from('trabajadores')
-    .select('app_activa, puede_cotizar, puede_oc, puede_rrhh, puede_finanzas, puede_proyectos, puede_planificacion, puede_asesoria, puede_remuneraciones, puede_facturas, puede_productos, puede_marcaciones, puede_vacaciones, puede_gastos, puede_visitas, puede_visitas_app, sueldo_minimo, sueldo_es_liquido')
+    .select('app_activa, puede_cotizar, puede_oc, puede_rrhh, puede_finanzas, puede_proyectos, puede_planificacion, puede_asesoria, puede_remuneraciones, puede_facturas, puede_productos, puede_marcaciones, puede_vacaciones, puede_gastos, puede_visitas, puede_visitas_app, puede_crm, puede_proveedores, sueldo_minimo, sueldo_es_liquido')
     .eq('usuario_id', usuarioId)
     .maybeSingle()
   return {
@@ -69,6 +71,8 @@ async function getPermisos(usuarioId) {
     puede_visitas:        data?.puede_visitas        ?? false,
     puede_visitas_app:    data?.puede_visitas_app    ?? false,
     puede_planificacion:  data?.puede_planificacion  ?? false,
+    puede_crm:            data?.puede_crm            ?? false,
+    puede_proveedores:    data?.puede_proveedores    ?? false,
     sueldo_minimo:        data?.sueldo_minimo        ?? 539000,
     sueldo_es_liquido:    data?.sueldo_es_liquido    ?? false,
   }
