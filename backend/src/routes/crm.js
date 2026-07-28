@@ -309,6 +309,71 @@ router.post('/clientes/:id/comentarios', async (req, res) => {
   res.json({ success: true, data })
 })
 
+/* PATCH /api/crm/clientes/:id/comentarios/:comentarioId — edita un comentario (solo autor) */
+router.patch('/clientes/:id/comentarios/:comentarioId', async (req, res) => {
+  const { comentarioId } = req.params
+  const { comentario } = req.body
+
+  if (!comentario || !comentario.trim()) {
+    return res.status(400).json({ success: false, error: { message: 'El comentario no puede estar vacío' } })
+  }
+
+  const { data: existente } = await supabase
+    .from('crm_comentarios')
+    .select('usuario_id')
+    .eq('id', comentarioId)
+    .maybeSingle()
+
+  if (!existente) {
+    return res.status(404).json({ success: false, error: { message: 'Comentario no encontrado' } })
+  }
+  if (existente.usuario_id !== req.user.id) {
+    return res.status(403).json({ success: false, error: { message: 'Solo el autor puede editar este comentario' } })
+  }
+
+  const { data, error } = await supabase
+    .from('crm_comentarios')
+    .update({ comentario: comentario.trim(), editado_at: new Date().toISOString() })
+    .eq('id', comentarioId)
+    .select()
+    .maybeSingle()
+
+  if (error) {
+    console.error('[crm/comentarios PATCH]', error.message)
+    return res.status(500).json({ success: false, error: { message: error.message } })
+  }
+  res.json({ success: true, data })
+})
+
+/* DELETE /api/crm/clientes/:id/comentarios/:comentarioId — elimina un comentario (autor o admin) */
+router.delete('/clientes/:id/comentarios/:comentarioId', async (req, res) => {
+  const { comentarioId } = req.params
+
+  const { data: existente } = await supabase
+    .from('crm_comentarios')
+    .select('usuario_id')
+    .eq('id', comentarioId)
+    .maybeSingle()
+
+  if (!existente) {
+    return res.status(404).json({ success: false, error: { message: 'Comentario no encontrado' } })
+  }
+  if (existente.usuario_id !== req.user.id && req.user.rol !== 'admin') {
+    return res.status(403).json({ success: false, error: { message: 'Sin permisos para eliminar este comentario' } })
+  }
+
+  const { error } = await supabase
+    .from('crm_comentarios')
+    .delete()
+    .eq('id', comentarioId)
+
+  if (error) {
+    console.error('[crm/comentarios DELETE]', error.message)
+    return res.status(500).json({ success: false, error: { message: error.message } })
+  }
+  res.json({ success: true })
+})
+
 /* POST /api/crm/sync-leads — importa los leads históricos de un formulario (solo admin) */
 router.post('/sync-leads', requireAdmin, async (req, res) => {
   try {

@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo } from 'react'
 import { apiClient } from '../../services/apiClient'
+import { useAuth } from '../auth/AuthContext'
 import Toast from '../../components/Toast'
 import {
-  Users2, Filter, X, Mail, Phone, RefreshCw, Pencil,
+  Users2, Filter, X, Mail, Phone, RefreshCw, Pencil, Trash2,
 } from 'lucide-react'
 
 /* ── Metadatos de estado ────────────────────────────────────── */
@@ -43,6 +44,7 @@ const formatFecha = (fecha) => {
 const ITEMS_POR_PAGINA = 10
 
 export default function CRMPage() {
+  const { user } = useAuth()
   const [clientes, setClientes] = useState([])
   const [loading, setLoading]   = useState(true)
   const [sel, setSel]           = useState(null)   // cliente seleccionado (panel lateral)
@@ -60,6 +62,8 @@ export default function CRMPage() {
   const [comentarios, setComentarios]             = useState([])
   const [nuevoComentario, setNuevoComentario]     = useState('')
   const [loadingComentario, setLoadingComentario] = useState(false)
+  const [editandoId, setEditandoId]               = useState(null)
+  const [editTexto, setEditTexto]                 = useState('')
 
   const showToast = (type, msg) => {
     setToast({ type, msg })
@@ -153,6 +157,27 @@ export default function CRMPage() {
       showToast('error', `No se pudo agregar el comentario: ${err.message}`)
     } finally {
       setLoadingComentario(false)
+    }
+  }
+
+  const editarComentario = async (comentarioId, texto) => {
+    try {
+      const updated = await apiClient.patch(`/crm/clientes/${sel.id}/comentarios/${comentarioId}`, { comentario: texto })
+      setComentarios((prev) => prev.map((c) => (c.id === comentarioId ? updated : c)))
+      setEditandoId(null)
+      setEditTexto('')
+    } catch (err) {
+      showToast('error', `No se pudo editar: ${err.message}`)
+    }
+  }
+
+  const eliminarComentario = async (comentarioId) => {
+    if (!window.confirm('¿Eliminar este comentario?')) return
+    try {
+      await apiClient.delete(`/crm/clientes/${sel.id}/comentarios/${comentarioId}`)
+      setComentarios((prev) => prev.filter((c) => c.id !== comentarioId))
+    } catch (err) {
+      showToast('error', `No se pudo eliminar: ${err.message}`)
     }
   }
 
@@ -353,15 +378,67 @@ export default function CRMPage() {
                   {comentarios.length === 0 ? (
                     <p className="text-sm text-slate-400">Sin comentarios aún</p>
                   ) : (
-                    comentarios.map((cm) => (
-                      <div key={cm.id} className="bg-slate-50 rounded-lg p-3">
-                        <div className="flex items-center justify-between gap-2 mb-1">
-                          <span className="text-sm font-medium text-slate-700">{cm.usuario_nombre}</span>
-                          <span className="text-xs text-slate-400 flex-shrink-0">{formatFecha(cm.created_at)}</span>
+                    comentarios.map((cm) => {
+                      const esAutor  = cm.usuario_id === user?.id
+                      const editando = editandoId === cm.id
+                      return (
+                        <div key={cm.id} className="bg-slate-50 rounded-lg p-3">
+                          <div className="flex items-center justify-between gap-2 mb-1">
+                            <span className="text-sm font-medium text-slate-700">{cm.usuario_nombre}</span>
+                            <div className="flex items-center gap-1.5 flex-shrink-0">
+                              <span className="text-xs text-slate-400">{formatFecha(cm.created_at)}</span>
+                              {cm.editado_at && <span className="text-xs text-slate-400">(editado)</span>}
+                              {esAutor && !editando && (
+                                <>
+                                  <button
+                                    onClick={() => { setEditandoId(cm.id); setEditTexto(cm.comentario) }}
+                                    className="rounded p-0.5 text-slate-400 hover:text-indigo-600 hover:bg-slate-200"
+                                    title="Editar"
+                                  >
+                                    <Pencil className="w-3 h-3" />
+                                  </button>
+                                  <button
+                                    onClick={() => eliminarComentario(cm.id)}
+                                    className="rounded p-0.5 text-slate-400 hover:text-red-600 hover:bg-slate-200"
+                                    title="Eliminar"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                          {editando ? (
+                            <div className="space-y-2 mt-1">
+                              <textarea
+                                value={editTexto}
+                                onChange={(e) => setEditTexto(e.target.value)}
+                                rows={2}
+                                className="input-base text-sm resize-y w-full"
+                                autoFocus
+                              />
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => editarComentario(cm.id, editTexto)}
+                                  disabled={!editTexto.trim()}
+                                  className="btn-primary text-xs py-1 px-2 disabled:opacity-50"
+                                >
+                                  Guardar
+                                </button>
+                                <button
+                                  onClick={() => { setEditandoId(null); setEditTexto('') }}
+                                  className="btn-secondary text-xs py-1 px-2"
+                                >
+                                  Cancelar
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <p className="text-sm text-slate-600 whitespace-pre-line">{cm.comentario}</p>
+                          )}
                         </div>
-                        <p className="text-sm text-slate-600 whitespace-pre-line">{cm.comentario}</p>
-                      </div>
-                    ))
+                      )
+                    })
                   )}
                 </div>
                 <textarea
