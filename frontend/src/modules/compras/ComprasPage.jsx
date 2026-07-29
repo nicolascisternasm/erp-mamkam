@@ -378,10 +378,11 @@ export default function ComprasPage() {
       setConfirmEnvio(oc)
       return
     }
-    doEnviarEmail(oc)
+    if (!enviandoId) doEnviarEmail(oc)
   }
 
   const doEnviarEmail = async (oc) => {
+    if (enviandoId) return
     setConfirmEnvio(null)
     setEnviandoId(oc.id)
     let pdfUrl = null
