@@ -210,11 +210,11 @@ router.post('/:id/enviar-email', requireAuth, requireRole('admin'), async (req, 
   /* 4. Enviar email via Brevo */
   const { pdfUrl } = req.body
   console.log('[enviar-email] pdfUrl recibida:', pdfUrl)
-  console.log('[enviar-email] pagos_comprobantes:', JSON.stringify(oc.pagos_comprobantes))
+  console.log('[enviar-email] comprobantes:', JSON.stringify(oc.comprobantes))
 
   const attachments = [
     ...(pdfUrl ? [{ url: pdfUrl, name: `${oc.numero}.pdf` }] : []),
-    ...(oc.pagos_comprobantes || [])
+    ...(oc.comprobantes || [])
       .filter(c => c.url)
       .map(c => ({ url: c.url, name: c.nombre || 'comprobante.pdf' })),
   ]
