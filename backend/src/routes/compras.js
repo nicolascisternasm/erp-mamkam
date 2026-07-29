@@ -210,6 +210,15 @@ router.post('/:id/enviar-email', requireAuth, requireRole('admin'), async (req, 
   /* 4. Enviar email via Brevo */
   const { pdfUrl } = req.body
   console.log('[enviar-email] pdfUrl recibida:', pdfUrl)
+  console.log('[enviar-email] pagos_comprobantes:', JSON.stringify(oc.pagos_comprobantes))
+
+  const attachments = [
+    ...(pdfUrl ? [{ url: pdfUrl, name: `${oc.numero}.pdf` }] : []),
+    ...(oc.pagos_comprobantes || [])
+      .filter(c => c.url)
+      .map(c => ({ url: c.url, name: c.nombre || 'comprobante.pdf' })),
+  ]
+  console.log('[enviar-email] attachments:', JSON.stringify(attachments))
   console.log('[enviar-email] enviando con Brevo...')
   try {
     const brevoRes = await fetch('https://api.brevo.com/v3/smtp/email', {
@@ -232,12 +241,7 @@ router.post('/:id/enviar-email', requireAuth, requireRole('admin'), async (req, 
           <br>
           <p>Saludos,<br>MAMKAM</p>
         `,
-        attachment: [
-          ...(pdfUrl ? [{ url: pdfUrl, name: `${oc.numero}.pdf` }] : []),
-          ...(oc.pagos_comprobantes || [])
-            .filter(c => c.url)
-            .map(c => ({ url: c.url, name: c.nombre || 'comprobante.pdf' })),
-        ],
+        attachment: attachments,
       }),
     })
     const brevoData = await brevoRes.json()
