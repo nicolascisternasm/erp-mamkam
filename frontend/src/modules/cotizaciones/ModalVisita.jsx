@@ -504,7 +504,10 @@ const TabChecklist = forwardRef(function TabChecklist({ visita, onProductosGuard
         unidad:         unidad,
       },
       { onConflict: 'visita_id,pregunta_id,unidad' }
-    )
+    ).then(({ data, error }) => {
+      if (error) console.error('[checklist upsert] ERROR:', error)
+      else console.log('[checklist upsert] OK:', data)
+    })
     timers.current[key] = { timeoutId: setTimeout(doUpsert, 600), flush: doUpsert }
   }
 
