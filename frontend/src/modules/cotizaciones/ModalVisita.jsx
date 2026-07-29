@@ -376,6 +376,8 @@ function TabDatosCrear({
 ══════════════════════════════════════════════ */
 function TabChecklist({ visita, onProductosGuardados }) {
   const tieneProductos = Array.isArray(visita.productos) && visita.productos.length > 0
+  console.log('[checklist] visita.productos:', JSON.stringify(visita?.productos))
+  console.log('[checklist] tipo:', typeof visita?.productos)
 
   const [productosLocales, setProductosLocales] = useState(visita.productos || [])
   const [seleccionando,    setSeleccionando]    = useState(!tieneProductos)
