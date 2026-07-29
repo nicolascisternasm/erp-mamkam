@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { X, CalendarDays, ClipboardList, Image as ImageIcon, Bot, Loader2, ChevronRight, ChevronLeft, Check } from 'lucide-react'
+import { X, CalendarDays, ClipboardList, Image as ImageIcon, Bot, Loader2, ChevronRight, ChevronLeft, Check, ChevronDown } from 'lucide-react'
 import { supabase } from '../../services/supabase'
 import { useAuth } from '../auth/AuthContext'
 import { useApp } from '../../context/AppContext'
@@ -399,14 +399,17 @@ function TabChecklist({ visita, onProductosGuardados }) {
       })
       .filter(Boolean)
   })
-  const [preguntas,  setPreguntas]  = useState([])
-  const [respuestas, setRespuestas] = useState({})
-  const [loadingCL,  setLoadingCL]  = useState(
+  const [preguntas,      setPreguntas]      = useState([])
+  const [respuestas,     setRespuestas]     = useState({})
+  const [cantidadToldos, setCantidadToldos] = useState(visita.cantidad_toldos ?? 1)
+  const [toldoAbierto,   setToldoAbierto]   = useState(1)
+  const [loadingCL,      setLoadingCL]      = useState(
     Array.isArray(visita.productos) && visita.productos.length > 0
   )
-  const timers     = useRef({})
-  const saveRef    = useRef(null)
-  const fetchIdRef = useRef(0)  /* Fix 1: guard contra race conditions */
+  const timers       = useRef({})
+  const saveRef      = useRef(null)
+  const toldoSaveRef = useRef(null)
+  const fetchIdRef   = useRef(0)  /* Fix 1: guard contra race conditions */
 
   useEffect(() => {
     if (productosLocales.length === 0) {
@@ -424,7 +427,6 @@ function TabChecklist({ visita, onProductosGuardados }) {
         .eq('empresa_id', visita.empresa_id)
         .eq('activo', true)
         .order('orden')
-      /* Descartar si llegó una respuesta de un fetch más viejo */
       if (fetchId !== fetchIdRef.current) return
       if (preguntasDB) {
         setPreguntas(
@@ -447,7 +449,8 @@ function TabChecklist({ visita, onProductosGuardados }) {
       if (fetchId !== fetchIdRef.current) return
       if (answers) {
         const map = {}
-        answers.forEach(row => { map[row.pregunta_id] = row.respuesta })
+        /* Clave compuesta para soportar multi-unidad */
+        answers.forEach(row => { map[`${row.pregunta_id}_${row.unidad ?? 1}`] = row.respuesta })
         setRespuestas(map)
       }
       setLoadingCL(false)
@@ -467,10 +470,21 @@ function TabChecklist({ visita, onProductosGuardados }) {
     }, 500)
   }
 
-  function handleChange(pregunta, valor) {
-    setRespuestas(prev => ({ ...prev, [pregunta.id]: valor }))
-    clearTimeout(timers.current[pregunta.id])
-    timers.current[pregunta.id] = setTimeout(() => {
+  function handleCantidadToldos(newCant) {
+    setCantidadToldos(newCant)
+    if (toldoAbierto > newCant) setToldoAbierto(1)
+    clearTimeout(toldoSaveRef.current)
+    toldoSaveRef.current = setTimeout(async () => {
+      await supabase.from('visitas').update({ cantidad_toldos: newCant }).eq('id', visita.id)
+    }, 500)
+  }
+
+  /* Clave: `${pregunta.id}_${unidad}` — unidad=1 para todo lo que no es toldo */
+  function handleChange(pregunta, valor, unidad = 1) {
+    const key = `${pregunta.id}_${unidad}`
+    setRespuestas(prev => ({ ...prev, [key]: valor }))
+    clearTimeout(timers.current[key])
+    timers.current[key] = setTimeout(() => {
       supabase.from('visita_checklist').upsert(
         {
           visita_id:      visita.id,
@@ -478,27 +492,44 @@ function TabChecklist({ visita, onProductosGuardados }) {
           pregunta_label: pregunta.label,
           respuesta:      valor,
           critical:       pregunta.critical,
+          unidad:         unidad,
         },
-        { onConflict: 'visita_id,pregunta_id' }
+        { onConflict: 'visita_id,pregunta_id,unidad' }
       )
     }, 600)
   }
 
-  /* Separar generales de las de producto */
+  /* Separar generales / toldo_vela / otros productos */
   const preguntasGenerales = preguntas.filter(q => q.general)
-  const preguntasProducto  = preguntas.filter(q => !q.general)
+  const preguntasToldo     = preguntas.filter(q => !q.general && q.product === 'toldo_vela')
+  const preguntasOtros     = preguntas.filter(q => !q.general && q.product !== 'toldo_vela')
 
-  /* Agrupar por producto usando Map (preserva orden de primera aparición, sin duplicados) */
+  /* Grupos de otros productos (Map para preservar orden, sin duplicados) */
   const gruposMap = new Map()
-  preguntasProducto.forEach(q => {
+  preguntasOtros.forEach(q => {
     const key = SNAKE_TO_LABEL[q.product] || q.product
     if (!gruposMap.has(key)) gruposMap.set(key, [])
     gruposMap.get(key).push(q)
   })
-  const grupos = Array.from(gruposMap, ([key, items]) => ({ key, preguntas: items }))
+  const gruposOtros = Array.from(gruposMap, ([key, items]) => ({ key, preguntas: items }))
 
-  const respondidas = preguntas.filter(q => (respuestas[q.id] || '').trim() !== '').length
-  const pct         = preguntas.length > 0 ? Math.round((respondidas / preguntas.length) * 100) : 0
+  /* Progreso: toldos cuentan cantidadToldos slots cada pregunta */
+  let totalSlots  = preguntasGenerales.length
+  let respondidas = 0
+  preguntasGenerales.forEach(q => {
+    if ((respuestas[`${q.id}_1`] || '').trim() !== '') respondidas++
+  })
+  preguntasToldo.forEach(q => {
+    for (let u = 1; u <= cantidadToldos; u++) {
+      totalSlots++
+      if ((respuestas[`${q.id}_${u}`] || '').trim() !== '') respondidas++
+    }
+  })
+  preguntasOtros.forEach(q => {
+    totalSlots++
+    if ((respuestas[`${q.id}_1`] || '').trim() !== '') respondidas++
+  })
+  const pct = totalSlots > 0 ? Math.round((respondidas / totalSlots) * 100) : 0
 
   return (
     <div className="px-6 py-5 space-y-5">
@@ -545,7 +576,7 @@ function TabChecklist({ visita, onProductosGuardados }) {
           {/* Barra de progreso */}
           <div>
             <div className="flex justify-between text-xs text-slate-500 mb-1.5">
-              <span>{respondidas} de {preguntas.length} preguntas respondidas</span>
+              <span>{respondidas} de {totalSlots} preguntas respondidas</span>
               <span className="font-semibold text-slate-700">{pct}%</span>
             </div>
             <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
@@ -566,8 +597,8 @@ function TabChecklist({ visita, onProductosGuardados }) {
                     <span className="text-xs text-slate-600 flex-1">{q.label}</span>
                     <input
                       type="date"
-                      value={respuestas[q.id] || ''}
-                      onChange={e => handleChange(q, e.target.value)}
+                      value={respuestas[`${q.id}_1`] || ''}
+                      onChange={e => handleChange(q, e.target.value, 1)}
                       className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
                     />
                   </div>
@@ -576,9 +607,63 @@ function TabChecklist({ visita, onProductosGuardados }) {
             </div>
           )}
 
-          {/* Grupos por producto */}
+          {/* Grupo Toldo Vela — acordeón multi-unidad */}
+          {preguntasToldo.length > 0 && (
+            <div>
+              {/* Header + stepper de cantidad */}
+              <div className="flex items-center justify-between gap-4 mb-3">
+                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg flex-1 ${GRUPO_STYLES['Toldo Vela'].header}`}>
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${GRUPO_STYLES['Toldo Vela'].dot}`} />
+                  <span className="text-xs font-bold tracking-wide uppercase">Toldo Vela</span>
+                </div>
+                <StepperToldos cantidad={cantidadToldos} onChange={handleCantidadToldos} />
+              </div>
+
+              {/* Acordeón — una sección por toldo */}
+              <div className="space-y-2">
+                {Array.from({ length: cantidadToldos }, (_, i) => {
+                  const unidad  = i + 1
+                  const abierto = toldoAbierto === unidad
+                  const respU   = preguntasToldo.filter(
+                    q => (respuestas[`${q.id}_${unidad}`] || '').trim() !== ''
+                  ).length
+                  return (
+                    <div key={unidad} className="border border-amber-100 rounded-xl overflow-hidden">
+                      <button
+                        type="button"
+                        onClick={() => setToldoAbierto(abierto ? null : unidad)}
+                        className="w-full flex items-center justify-between px-4 py-3 bg-amber-50/60 hover:bg-amber-50 transition-colors"
+                      >
+                        <span className="text-sm font-semibold text-amber-900">Toldo {unidad}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-amber-600">{respU}/{preguntasToldo.length}</span>
+                          <ChevronDown
+                            className={`w-4 h-4 text-amber-500 transition-transform duration-200 ${abierto ? 'rotate-180' : ''}`}
+                          />
+                        </div>
+                      </button>
+                      {abierto && (
+                        <div className="px-3 py-3 space-y-2.5 bg-white">
+                          {preguntasToldo.map(q => (
+                            <PreguntaRow
+                              key={`${q.id}_${unidad}`}
+                              pregunta={q}
+                              valor={respuestas[`${q.id}_${unidad}`] || ''}
+                              onChange={(pq, val) => handleChange(pq, val, unidad)}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Grupos de otros productos (Pasto Sintético, Caucho Continuo, etc.) */}
           <div className="space-y-6">
-            {grupos.map(grupo => {
+            {gruposOtros.map(grupo => {
               const style = GRUPO_STYLES[grupo.key] || { header: 'bg-slate-100 text-slate-600', dot: 'bg-slate-400' }
               return (
                 <div key={grupo.key}>
@@ -591,8 +676,8 @@ function TabChecklist({ visita, onProductosGuardados }) {
                       <PreguntaRow
                         key={q.id}
                         pregunta={q}
-                        valor={respuestas[q.id] || ''}
-                        onChange={handleChange}
+                        valor={respuestas[`${q.id}_1`] || ''}
+                        onChange={(pq, val) => handleChange(pq, val, 1)}
                       />
                     ))}
                   </div>
@@ -629,6 +714,35 @@ function PreguntaRow({ pregunta, valor, onChange }) {
         placeholder={pregunta.kind === 'date' ? '' : 'Respuesta...'}
         className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
       />
+    </div>
+  )
+}
+
+/* ═══════════════════════════════════════════════
+   Stepper de cantidad de toldos
+══════════════════════════════════════════════ */
+function StepperToldos({ cantidad, onChange }) {
+  return (
+    <div className="flex items-center gap-2 shrink-0">
+      <span className="text-xs text-slate-500 whitespace-nowrap">Cantidad de toldos</span>
+      <div className="flex items-center gap-0.5">
+        <button
+          type="button"
+          onClick={() => onChange(Math.max(1, cantidad - 1))}
+          disabled={cantidad <= 1}
+          className="w-6 h-6 rounded border border-slate-200 flex items-center justify-center text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-bold leading-none"
+        >
+          −
+        </button>
+        <span className="w-7 text-center text-sm font-semibold text-slate-800">{cantidad}</span>
+        <button
+          type="button"
+          onClick={() => onChange(cantidad + 1)}
+          className="w-6 h-6 rounded border border-slate-200 flex items-center justify-center text-slate-600 hover:bg-slate-100 text-sm font-bold leading-none"
+        >
+          +
+        </button>
+      </div>
     </div>
   )
 }
