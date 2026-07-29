@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { X, CalendarDays, ClipboardList, Image as ImageIcon, Bot, Loader2 } from 'lucide-react'
+import { X, CalendarDays, ClipboardList, Image as ImageIcon, Bot, Loader2, ChevronRight, ChevronLeft } from 'lucide-react'
 import { supabase } from '../../services/supabase'
 import { useAuth } from '../auth/AuthContext'
 import { useApp } from '../../context/AppContext'
@@ -7,7 +7,12 @@ import { buildChecklist } from './visitaChecklists'
 
 const TABS = ['Datos', 'Checklist', 'Fotos', 'Resumen IA']
 const TAB_ICONS = { Datos: CalendarDays, Checklist: ClipboardList, Fotos: ImageIcon, 'Resumen IA': Bot }
-const PRODUCTOS_OPCIONES = ['Toldo Vela', 'Pasto Sintético', 'Caucho Continuo']
+
+const PRODUCTOS_OPCIONES = [
+  { id: 'toldo_vela',       label: 'Toldo Vela' },
+  { id: 'pasto_sintetico',  label: 'Pasto Sintético' },
+  { id: 'caucho_continuo',  label: 'Caucho Continuo' },
+]
 
 const ESTADO_STYLES = {
   completada: 'bg-emerald-100 text-emerald-700',
@@ -16,12 +21,15 @@ const ESTADO_STYLES = {
 }
 
 const GRUPO_STYLES = {
-  General:          { header: 'bg-slate-100 text-slate-600',   dot: 'bg-slate-400' },
-  'Toldo Vela':     { header: 'bg-amber-50 text-amber-800',    dot: 'bg-amber-400' },
-  'Pasto Sintético':{ header: 'bg-emerald-50 text-emerald-800',dot: 'bg-emerald-500' },
-  'Caucho Continuo':{ header: 'bg-red-50 text-red-800',        dot: 'bg-red-500' },
+  General:           { header: 'bg-slate-100 text-slate-600',    dot: 'bg-slate-400' },
+  'Toldo Vela':      { header: 'bg-amber-50 text-amber-800',     dot: 'bg-amber-400' },
+  'Pasto Sintético': { header: 'bg-emerald-50 text-emerald-800', dot: 'bg-emerald-500' },
+  'Caucho Continuo': { header: 'bg-red-50 text-red-800',         dot: 'bg-red-500' },
 }
 
+/* ═══════════════════════════════════════════════
+   COMPONENTE PRINCIPAL
+══════════════════════════════════════════════ */
 export default function ModalVisita({ cot, onClose }) {
   const { user }         = useAuth()
   const { trabajadores } = useApp()
@@ -31,7 +39,7 @@ export default function ModalVisita({ cot, onClose }) {
   const [loading,  setLoading]  = useState(true)
   const [guardando, setGuardando] = useState(false)
 
-  /* form state */
+  /* form state (tab Datos — creación) */
   const [fechaAgendada,    setFechaAgendada]    = useState('')
   const [responsable,      setResponsable]      = useState(user?.nombre || '')
   const [instalador,       setInstalador]       = useState('')
@@ -39,6 +47,7 @@ export default function ModalVisita({ cot, onClose }) {
   const [productosChecked, setProductosChecked] = useState([])
 
   const trabajadoresActivos = (trabajadores || []).filter(t => t.estado === 'activo')
+  const tabIdx = TABS.indexOf(tab)
 
   useEffect(() => {
     async function fetchVisita() {
@@ -54,9 +63,9 @@ export default function ModalVisita({ cot, onClose }) {
     void fetchVisita()
   }, [cot.id])
 
-  function toggleProducto(p) {
+  function toggleProducto(label) {
     setProductosChecked(prev =>
-      prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p]
+      prev.includes(label) ? prev.filter(x => x !== label) : [...prev, label]
     )
   }
 
@@ -84,8 +93,71 @@ export default function ModalVisita({ cot, onClose }) {
       })
       .select()
       .single()
-    if (!error && data) setVisita(data)
+    if (!error && data) {
+      setVisita(data)
+      setTab('Checklist')
+    }
     setGuardando(false)
+  }
+
+  function handleProductosGuardados(productos) {
+    setVisita(prev => ({ ...prev, productos }))
+  }
+
+  /* ── Render footer de navegación ── */
+  function renderFooter() {
+    const btnBase = 'inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold transition-colors'
+    const btnGray = `${btnBase} text-slate-600 bg-slate-100 hover:bg-slate-200`
+    const btnIndigo = `${btnBase} text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60`
+
+    /* Tab Datos sin visita → Cancelar + Crear visita */
+    if (tab === 'Datos' && !visita) {
+      return (
+        <>
+          <button className={btnGray} onClick={onClose}>Cancelar</button>
+          <button className={btnIndigo} onClick={handleCrear} disabled={guardando}>
+            {guardando && <Loader2 className="w-4 h-4 animate-spin" />}
+            Crear visita
+          </button>
+        </>
+      )
+    }
+
+    /* Tab Resumen IA → Anterior + Cerrar */
+    if (tab === 'Resumen IA') {
+      return (
+        <>
+          <button className={btnGray} onClick={() => setTab(TABS[tabIdx - 1])}>
+            <ChevronLeft className="w-4 h-4" /> Anterior
+          </button>
+          <button className={btnGray} onClick={onClose}>Cerrar</button>
+        </>
+      )
+    }
+
+    /* Tab Datos con visita → solo Siguiente */
+    if (tab === 'Datos' && visita) {
+      return (
+        <>
+          <div />
+          <button className={btnIndigo} onClick={() => setTab(TABS[tabIdx + 1])}>
+            Siguiente <ChevronRight className="w-4 h-4" />
+          </button>
+        </>
+      )
+    }
+
+    /* Tabs intermedios (Checklist, Fotos) → Anterior + Siguiente */
+    return (
+      <>
+        <button className={btnGray} onClick={() => setTab(TABS[tabIdx - 1])}>
+          <ChevronLeft className="w-4 h-4" /> Anterior
+        </button>
+        <button className={btnIndigo} onClick={() => setTab(TABS[tabIdx + 1])}>
+          Siguiente <ChevronRight className="w-4 h-4" />
+        </button>
+      </>
+    )
   }
 
   return (
@@ -151,7 +223,6 @@ export default function ModalVisita({ cot, onClose }) {
             </div>
           ) : (
             <>
-              {/* TAB DATOS */}
               {tab === 'Datos' && (
                 visita
                   ? <TabDatosLectura visita={visita} />
@@ -162,23 +233,18 @@ export default function ModalVisita({ cot, onClose }) {
                       notasPrevias={notasPrevias}         setNotasPrevias={setNotasPrevias}
                       productosChecked={productosChecked} toggleProducto={toggleProducto}
                       trabajadores={trabajadoresActivos}
-                      onCancelar={onClose}
-                      onCrear={handleCrear}
-                      guardando={guardando}
                     />
               )}
 
-              {/* TAB CHECKLIST */}
               {tab === 'Checklist' && (
                 visita
-                  ? <TabChecklist visita={visita} />
+                  ? <TabChecklist visita={visita} onProductosGuardados={handleProductosGuardados} />
                   : <div className="flex flex-col items-center justify-center h-40 text-slate-400">
                       <ClipboardList className="w-8 h-8 mb-2 text-slate-300" />
                       <p className="text-sm">Primero crea una visita en el tab Datos.</p>
                     </div>
               )}
 
-              {/* TABS PENDIENTES */}
               {(tab === 'Fotos' || tab === 'Resumen IA') && (
                 <div className="flex flex-col items-center justify-center h-40 text-slate-400 py-12">
                   {(() => { const Icon = TAB_ICONS[tab]; return <Icon className="w-8 h-8 mb-3 text-slate-300" /> })()}
@@ -188,14 +254,22 @@ export default function ModalVisita({ cot, onClose }) {
             </>
           )}
         </div>
+
+        {/* ── Footer navegación ── */}
+        {!loading && (
+          <div className="flex justify-between items-center px-6 py-4 border-t border-slate-100 shrink-0 bg-slate-50/70">
+            {renderFooter()}
+          </div>
+        )}
+
       </div>
     </div>
   )
 }
 
-/* ─────────────────────────────────────────────
+/* ═══════════════════════════════════════════════
    TAB DATOS — modo lectura
-───────────────────────────────────────────── */
+══════════════════════════════════════════════ */
 function TabDatosLectura({ visita }) {
   return (
     <div className="px-6 py-5 space-y-1 max-w-2xl">
@@ -208,7 +282,11 @@ function TabDatosLectura({ visita }) {
       <Row label="Fecha agendada" value={visita.fecha_agendada ?? '—'} />
       <Row label="Responsable"    value={visita.responsable_visita ?? '—'} />
       <Row label="Instalador"     value={visita.instalador_nombre ?? '—'} />
-      <Row label="Productos"      value={Array.isArray(visita.productos) && visita.productos.length ? visita.productos.join(', ') : '—'} />
+      <Row label="Productos"      value={
+        Array.isArray(visita.productos) && visita.productos.length
+          ? visita.productos.join(', ')
+          : '—'
+      } />
       {visita.notas_previas && (
         <div className="pt-3">
           <p className="text-xs font-medium text-slate-400 mb-1">Notas previas</p>
@@ -219,9 +297,9 @@ function TabDatosLectura({ visita }) {
   )
 }
 
-/* ─────────────────────────────────────────────
+/* ═══════════════════════════════════════════════
    TAB DATOS — formulario de creación
-───────────────────────────────────────────── */
+══════════════════════════════════════════════ */
 function TabDatosCrear({
   fechaAgendada, setFechaAgendada,
   responsable, setResponsable,
@@ -229,103 +307,90 @@ function TabDatosCrear({
   notasPrevias, setNotasPrevias,
   productosChecked, toggleProducto,
   trabajadores,
-  onCancelar, onCrear, guardando,
 }) {
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
-        <Field label="Fecha agendada">
-          <input
-            type="date"
-            value={fechaAgendada}
-            onChange={e => setFechaAgendada(e.target.value)}
-            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
-          />
-        </Field>
+    <div className="px-6 py-5 space-y-5">
+      <Field label="Fecha agendada">
+        <input
+          type="date"
+          value={fechaAgendada}
+          onChange={e => setFechaAgendada(e.target.value)}
+          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+        />
+      </Field>
 
-        <Field label="Responsable de visita">
-          <input
-            type="text"
-            value={responsable}
-            onChange={e => setResponsable(e.target.value)}
-            placeholder="Nombre del responsable"
-            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
-          />
-        </Field>
+      <Field label="Responsable de visita">
+        <input
+          type="text"
+          value={responsable}
+          onChange={e => setResponsable(e.target.value)}
+          placeholder="Nombre del responsable"
+          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+        />
+      </Field>
 
-        <Field label="Instalador">
-          <select
-            value={instalador}
-            onChange={e => setInstalador(e.target.value)}
-            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
-          >
-            <option value="">— Sin asignar —</option>
-            {trabajadores.map(t => (
-              <option key={t.id} value={t.nombre}>{t.nombre}</option>
-            ))}
-          </select>
-        </Field>
-
-        <Field label="Productos">
-          <div className="flex flex-col gap-2">
-            {PRODUCTOS_OPCIONES.map(p => (
-              <label key={p} className="flex items-center gap-2.5 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={productosChecked.includes(p)}
-                  onChange={() => toggleProducto(p)}
-                  className="w-4 h-4 rounded accent-indigo-600 cursor-pointer"
-                />
-                <span className="text-sm text-slate-700">{p}</span>
-              </label>
-            ))}
-          </div>
-        </Field>
-
-        <Field label="Notas previas">
-          <textarea
-            value={notasPrevias}
-            onChange={e => setNotasPrevias(e.target.value)}
-            rows={3}
-            placeholder="Instrucciones, observaciones, etc."
-            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 resize-none"
-          />
-        </Field>
-      </div>
-
-      <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-100 shrink-0 bg-slate-50/70">
-        <button
-          onClick={onCancelar}
-          className="px-4 py-2 rounded-lg text-sm font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
+      <Field label="Instalador">
+        <select
+          value={instalador}
+          onChange={e => setInstalador(e.target.value)}
+          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
         >
-          Cancelar
-        </button>
-        <button
-          onClick={onCrear}
-          disabled={guardando}
-          className="inline-flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 transition-colors disabled:opacity-60"
-        >
-          {guardando && <Loader2 className="w-4 h-4 animate-spin" />}
-          Crear visita
-        </button>
-      </div>
+          <option value="">— Sin asignar —</option>
+          {trabajadores.map(t => (
+            <option key={t.id} value={t.nombre}>{t.nombre}</option>
+          ))}
+        </select>
+      </Field>
+
+      <Field label="Productos">
+        <div className="flex flex-col gap-2">
+          {PRODUCTOS_OPCIONES.map(p => (
+            <label key={p.id} className="flex items-center gap-2.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={productosChecked.includes(p.label)}
+                onChange={() => toggleProducto(p.label)}
+                className="w-4 h-4 rounded accent-indigo-600 cursor-pointer"
+              />
+              <span className="text-sm text-slate-700">{p.label}</span>
+            </label>
+          ))}
+        </div>
+      </Field>
+
+      <Field label="Notas previas">
+        <textarea
+          value={notasPrevias}
+          onChange={e => setNotasPrevias(e.target.value)}
+          rows={3}
+          placeholder="Instrucciones, observaciones, etc."
+          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 resize-none"
+        />
+      </Field>
     </div>
   )
 }
 
-/* ─────────────────────────────────────────────
+/* ═══════════════════════════════════════════════
    TAB CHECKLIST
-───────────────────────────────────────────── */
-function TabChecklist({ visita }) {
+══════════════════════════════════════════════ */
+function TabChecklist({ visita, onProductosGuardados }) {
+  const tieneProductos = Array.isArray(visita.productos) && visita.productos.length > 0
+
+  const [productosLocales, setProductosLocales] = useState(visita.productos || [])
+  const [seleccionando,    setSeleccionando]    = useState(!tieneProductos)
+  const [actualizando,     setActualizando]     = useState(false)
+
   const [respuestas, setRespuestas] = useState({})
-  const [loadingCL,  setLoadingCL]  = useState(true)
+  const [loadingCL,  setLoadingCL]  = useState(!seleccionando)
   const timers = useRef({})
 
-  const preguntas   = buildChecklist(visita.productos || [])
+  const preguntas   = buildChecklist(productosLocales)
   const respondidas = preguntas.filter(q => (respuestas[q.id] || '').trim() !== '').length
   const pct         = preguntas.length > 0 ? Math.round((respondidas / preguntas.length) * 100) : 0
 
   useEffect(() => {
+    if (seleccionando) return
     async function load() {
       setLoadingCL(true)
       const { data } = await supabase
@@ -340,7 +405,21 @@ function TabChecklist({ visita }) {
       setLoadingCL(false)
     }
     void load()
-  }, [visita.id])
+  }, [visita.id, seleccionando])
+
+  function toggleLocal(label) {
+    setProductosLocales(prev =>
+      prev.includes(label) ? prev.filter(x => x !== label) : [...prev, label]
+    )
+  }
+
+  async function handleGuardarProductos() {
+    setActualizando(true)
+    await supabase.from('visitas').update({ productos: productosLocales }).eq('id', visita.id)
+    onProductosGuardados(productosLocales)
+    setSeleccionando(false)
+    setActualizando(false)
+  }
 
   function handleChange(pregunta, valor) {
     setRespuestas(prev => ({ ...prev, [pregunta.id]: valor }))
@@ -359,18 +438,44 @@ function TabChecklist({ visita }) {
     }, 600)
   }
 
-  /* Agrupar preguntas */
-  const grupos = preguntas.reduce((acc, q) => {
-    const key = q.general ? 'General' : (q.product || 'General')
-    const last = acc[acc.length - 1]
-    if (last && last.key === key) {
-      last.preguntas.push(q)
-    } else {
-      acc.push({ key, preguntas: [q] })
-    }
-    return acc
-  }, [])
+  /* ── Selector de productos ── */
+  if (seleccionando) {
+    return (
+      <div className="px-6 py-8 max-w-md">
+        <h3 className="text-sm font-semibold text-slate-800 mb-1">Selecciona los productos de esta visita</h3>
+        <p className="text-xs text-slate-400 mb-5">Las preguntas del checklist se adaptarán a los productos elegidos.</p>
+        <div className="flex flex-col gap-3 mb-8">
+          {PRODUCTOS_OPCIONES.map(p => (
+            <label key={p.id} className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-colors
+              ${productosLocales.includes(p.label)
+                ? 'border-indigo-400 bg-indigo-50'
+                : 'border-slate-200 bg-white hover:border-slate-300'}`}
+            >
+              <input
+                type="checkbox"
+                checked={productosLocales.includes(p.label)}
+                onChange={() => toggleLocal(p.label)}
+                className="w-4 h-4 accent-indigo-600 cursor-pointer"
+              />
+              <span className={`text-sm font-semibold ${productosLocales.includes(p.label) ? 'text-indigo-700' : 'text-slate-700'}`}>
+                {p.label}
+              </span>
+            </label>
+          ))}
+        </div>
+        <button
+          onClick={handleGuardarProductos}
+          disabled={actualizando || productosLocales.length === 0}
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 transition-colors disabled:opacity-50"
+        >
+          {actualizando && <Loader2 className="w-4 h-4 animate-spin" />}
+          Confirmar selección
+        </button>
+      </div>
+    )
+  }
 
+  /* ── Checklist ── */
   if (loadingCL) {
     return (
       <div className="flex items-center justify-center h-40">
@@ -378,6 +483,14 @@ function TabChecklist({ visita }) {
       </div>
     )
   }
+
+  const grupos = preguntas.reduce((acc, q) => {
+    const key = q.general ? 'General' : (q.product || 'General')
+    const last = acc[acc.length - 1]
+    if (last && last.key === key) last.preguntas.push(q)
+    else acc.push({ key, preguntas: [q] })
+    return acc
+  }, [])
 
   return (
     <div className="px-6 py-5 space-y-6">
@@ -390,10 +503,7 @@ function TabChecklist({ visita }) {
         <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
           <div
             className="h-2 rounded-full transition-all duration-500"
-            style={{
-              width: `${pct}%`,
-              background: pct === 100 ? '#10b981' : '#6366f1',
-            }}
+            style={{ width: `${pct}%`, background: pct === 100 ? '#10b981' : '#6366f1' }}
           />
         </div>
       </div>
@@ -424,9 +534,9 @@ function TabChecklist({ visita }) {
   )
 }
 
-/* ─────────────────────────────────────────────
+/* ═══════════════════════════════════════════════
    Fila de pregunta individual
-───────────────────────────────────────────── */
+══════════════════════════════════════════════ */
 function PreguntaRow({ pregunta, valor, onChange }) {
   return (
     <div className={`rounded-xl p-3 border ${pregunta.critical ? 'bg-amber-50 border-amber-100' : 'bg-slate-50 border-slate-100'}`}>
@@ -451,9 +561,9 @@ function PreguntaRow({ pregunta, valor, onChange }) {
   )
 }
 
-/* ─────────────────────────────────────────────
+/* ═══════════════════════════════════════════════
    Helpers
-───────────────────────────────────────────── */
+══════════════════════════════════════════════ */
 function Row({ label, value }) {
   return (
     <div className="flex items-start gap-3 py-2 border-b border-slate-50 last:border-0">
