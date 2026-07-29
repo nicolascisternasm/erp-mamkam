@@ -16,6 +16,7 @@ import {
 import { supabase } from '../../services/supabase'
 import ComprobantesCotizacion from './ComprobantesCotizacion'
 import OrdenesCompraCliente from './OrdenesCompraCliente'
+import ModalVisita from './ModalVisita'
 
 function buildPublicUrl(cot, empresa) {
   const lean = {
@@ -95,6 +96,7 @@ export default function CotizacionDetalle() {
   const [confirmVolverVisita,   setConfirmVolverVisita]   = useState(false)
   const [confirmVolverEnviada,  setConfirmVolverEnviada]  = useState(false)
   const [confirmVolverBorrador, setConfirmVolverBorrador] = useState(false)
+  const [modalVisita, setModalVisita] = useState(false)
   const [asociarFacturaModal, setAsociarFacturaModal] = useState(null)
   const [facturasLoaded, setFacturasLoaded]           = useState([])
   const [facturasLoading, setFacturasLoading]         = useState(false)
@@ -1075,6 +1077,23 @@ export default function CotizacionDetalle() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Botón flotante Visita */}
+      {cot && ['aprobada', 'en_ejecucion', 'cerrada'].includes(cot.estado) && (
+        <button
+          data-html2canvas-ignore="true"
+          onClick={() => setModalVisita(true)}
+          className="fixed bottom-6 right-6 z-40 flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-semibold text-sm px-4 py-3 rounded-full shadow-lg shadow-indigo-500/40 transition-colors"
+        >
+          <MapPin className="w-4 h-4" />
+          Visita
+        </button>
+      )}
+
+      {/* Modal Visita */}
+      {modalVisita && cot && (
+        <ModalVisita cot={cot} onClose={() => setModalVisita(false)} />
       )}
     </div>
   )
