@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { X, CalendarDays, ClipboardList, Image as ImageIcon, Bot, Loader2, ChevronRight, ChevronLeft, Check, ChevronDown } from 'lucide-react'
+import { X, CalendarDays, ClipboardList, Image as ImageIcon, Bot, Loader2, ChevronRight, ChevronLeft, Check, ChevronDown, Upload, Trash2 } from 'lucide-react'
 import { supabase } from '../../services/supabase'
 import { useAuth } from '../auth/AuthContext'
 import { useApp } from '../../context/AppContext'
@@ -256,9 +256,18 @@ export default function ModalVisita({ cot, onClose }) {
                     </div>
               )}
 
-              {(tab === 'Fotos' || tab === 'Resumen IA') && (
+              {tab === 'Fotos' && (
+                visita
+                  ? <TabFotos visita={visita} />
+                  : <div className="flex flex-col items-center justify-center h-40 text-slate-400">
+                      <ImageIcon className="w-8 h-8 mb-2 text-slate-300" />
+                      <p className="text-sm">Primero crea una visita en el tab Datos.</p>
+                    </div>
+              )}
+
+              {tab === 'Resumen IA' && (
                 <div className="flex flex-col items-center justify-center h-40 text-slate-400 py-12">
-                  {(() => { const Icon = TAB_ICONS[tab]; return <Icon className="w-8 h-8 mb-3 text-slate-300" /> })()}
+                  <Bot className="w-8 h-8 mb-3 text-slate-300" />
                   <p className="text-sm">Próximamente...</p>
                 </div>
               )}
@@ -743,6 +752,204 @@ function StepperToldos({ cantidad, onChange }) {
           +
         </button>
       </div>
+    </div>
+  )
+}
+
+/* ═══════════════════════════════════════════════
+   TAB FOTOS
+══════════════════════════════════════════════ */
+// NOTA: bucket 'visitas-audios' se reutiliza para VIDEO de visitas (no audio).
+// Nombre heredado de una creación manual en Supabase; revisar si conviene
+// migrar a un bucket 'visitas-videos' más adelante.
+function TabFotos({ visita }) {
+  const { user }      = useAuth()
+  const [archivos,    setArchivos]    = useState([])
+  const [subiendo,    setSubiendo]    = useState([])   // [{ id, name }]
+  const [loadingFotos, setLoadingFotos] = useState(true)
+  const [error,       setError]       = useState(null)
+  const [lightbox,    setLightbox]    = useState(null) // URL imagen en fullscreen
+  const fileInputRef  = useRef(null)
+
+  useEffect(() => {
+    async function cargar() {
+      setLoadingFotos(true)
+      const { data } = await supabase
+        .from('visita_fotos')
+        .select('*')
+        .eq('visita_id', visita.id)
+        .order('created_at', { ascending: false })
+      setArchivos(data || [])
+      setLoadingFotos(false)
+    }
+    void cargar()
+  }, [visita.id])
+
+  async function handleSubir(e) {
+    const files = Array.from(e.target.files || [])
+    e.target.value = ''
+    if (!files.length) return
+    setError(null)
+
+    for (const file of files) {
+      const maxMB = file.type.startsWith('video/') ? 200 : 10
+      if (file.size > maxMB * 1024 * 1024) {
+        setError(`"${file.name}" excede el límite de ${maxMB} MB y no fue subido.`)
+        continue
+      }
+
+      const uploadId    = `${Date.now()}_${Math.random()}`
+      const bucket      = file.type.startsWith('video/') ? 'visitas-audios' : 'visitas-fotos'
+      const tipo        = file.type.startsWith('video/') ? 'video' : 'foto'
+      const storagePath = `${visita.id}/${Date.now()}_${file.name.replace(/\s/g, '_')}`
+
+      setSubiendo(prev => [...prev, { id: uploadId, name: file.name }])
+
+      const { error: upErr } = await supabase.storage
+        .from(bucket)
+        .upload(storagePath, file, { upsert: false, contentType: file.type })
+
+      if (upErr) {
+        setError(`Error subiendo "${file.name}": ${upErr.message}`)
+        setSubiendo(prev => prev.filter(s => s.id !== uploadId))
+        continue
+      }
+
+      const { data: { publicUrl } } = supabase.storage.from(bucket).getPublicUrl(storagePath)
+
+      await supabase.from('visita_fotos').insert({
+        visita_id:      visita.id,
+        tipo,
+        url:            publicUrl,
+        nombre_archivo: file.name,
+        tamano_kb:      Math.round(file.size / 1024),
+        subido_por:     user?.nombre || user?.email || null,
+      })
+
+      setSubiendo(prev => prev.filter(s => s.id !== uploadId))
+    }
+
+    /* Refrescar grilla tras terminar todos los uploads */
+    const { data } = await supabase
+      .from('visita_fotos')
+      .select('*')
+      .eq('visita_id', visita.id)
+      .order('created_at', { ascending: false })
+    setArchivos(data || [])
+  }
+
+  async function handleEliminar(archivo) {
+    if (!window.confirm(`¿Eliminar "${archivo.nombre_archivo}"?`)) return
+
+    const bucket    = archivo.tipo === 'video' ? 'visitas-audios' : 'visitas-fotos'
+    const urlParts  = archivo.url.split(`/${bucket}/`)
+    const storagePath = urlParts[1]
+
+    if (storagePath) {
+      await supabase.storage.from(bucket).remove([storagePath])
+    }
+    await supabase.from('visita_fotos').delete().eq('id', archivo.id)
+    setArchivos(prev => prev.filter(a => a.id !== archivo.id))
+  }
+
+  return (
+    <div className="px-6 py-5">
+
+      {/* ── Barra superior ── */}
+      <div className="flex items-center justify-between mb-5">
+        <p className="text-xs text-slate-400">Fotos máx. 10 MB · Videos máx. 200 MB</p>
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 transition-colors"
+        >
+          <Upload className="w-4 h-4" />
+          Subir fotos o videos
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*,video/*"
+          multiple
+          className="hidden"
+          onChange={handleSubir}
+        />
+      </div>
+
+      {/* ── Error de validación ── */}
+      {error && (
+        <div className="mb-4 px-3 py-2.5 rounded-lg bg-red-50 border border-red-100 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
+      {/* ── Spinners de archivos en curso ── */}
+      {subiendo.length > 0 && (
+        <div className="mb-4 space-y-1.5">
+          {subiendo.map(s => (
+            <div key={s.id} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-indigo-50 border border-indigo-100">
+              <Loader2 className="w-4 h-4 animate-spin text-indigo-500 shrink-0" />
+              <span className="text-xs text-indigo-700 truncate">{s.name}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Contenido principal ── */}
+      {loadingFotos ? (
+        <div className="flex items-center justify-center h-40">
+          <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
+        </div>
+      ) : archivos.length === 0 && subiendo.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16">
+          <ImageIcon className="w-10 h-10 mb-3 text-slate-200" />
+          <p className="text-sm font-medium text-slate-500">Aún no hay fotos ni videos de esta visita</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          {archivos.map(a => (
+            <div key={a.id} className="relative group rounded-xl overflow-hidden bg-slate-100 aspect-square">
+              {a.tipo === 'video' ? (
+                <video src={a.url} controls className="w-full h-full object-cover" />
+              ) : (
+                <img
+                  src={a.url}
+                  alt={a.nombre_archivo}
+                  className="w-full h-full object-cover cursor-pointer"
+                  onClick={() => setLightbox(a.url)}
+                />
+              )}
+              <button
+                type="button"
+                onClick={() => handleEliminar(a)}
+                className="absolute top-2 right-2 w-7 h-7 rounded-lg bg-white/80 hover:bg-red-50 text-slate-500 hover:text-red-600 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+              {a.tipo === 'video' && (
+                <span className="absolute bottom-2 left-2 px-1.5 py-0.5 rounded text-[10px] font-bold bg-black/60 text-white tracking-wide">
+                  VIDEO
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Lightbox ── */}
+      {lightbox && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90"
+          onClick={() => setLightbox(null)}
+        >
+          <img
+            src={lightbox}
+            alt=""
+            className="max-w-[90vw] max-h-[90vh] object-contain rounded-xl shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
   )
 }
