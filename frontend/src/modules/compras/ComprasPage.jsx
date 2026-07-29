@@ -258,7 +258,11 @@ export default function ComprasPage() {
     if (!oc) return
     const empresaId = empresa?.id || user?.empresa_id || 'sin-empresa'
     const ts = Date.now()
-    const path = `${empresaId}/${oc.id}/${ts}_${file.name}`
+    const nombreSanitizado = file.name
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-zA-Z0-9._-]/g, '_')
+    const path = `${empresaId}/${oc.id}/${ts}_${nombreSanitizado}`
 
     setEstadoModalComp('subiendo')
     let url
@@ -337,7 +341,11 @@ export default function ComprasPage() {
     const oc = compras.find((c) => c.id === modalFacturasId)
     if (!oc) return
     const ts = Date.now()
-    const path = `compras/${oc.id}/${ts}_${file.name}`
+    const nombreSanitizado = file.name
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-zA-Z0-9._-]/g, '_')
+    const path = `compras/${oc.id}/${ts}_${nombreSanitizado}`
     setUploading(true)
     try {
       const { error } = await supabase.storage
