@@ -3,7 +3,6 @@ import { X, CalendarDays, ClipboardList, Image as ImageIcon, Bot, Loader2, Chevr
 import { supabase } from '../../services/supabase'
 import { useAuth } from '../auth/AuthContext'
 import { useApp } from '../../context/AppContext'
-import { buildChecklist } from './visitaChecklists'
 
 const TABS = ['Datos', 'Checklist', 'Fotos', 'Resumen IA']
 const TAB_ICONS = { Datos: CalendarDays, Checklist: ClipboardList, Fotos: ImageIcon, 'Resumen IA': Bot }
@@ -18,6 +17,18 @@ const ESTADO_STYLES = {
   completada: 'bg-emerald-100 text-emerald-700',
   en_curso:   'bg-amber-100 text-amber-700',
   realizada:  'bg-violet-100 text-violet-700',
+}
+
+const LABEL_TO_SNAKE = {
+  'Toldo Vela':      'toldo_vela',
+  'Pasto Sintético': 'pasto_sintetico',
+  'Caucho Continuo': 'caucho_continuo',
+}
+
+const SNAKE_TO_LABEL = {
+  'toldo_vela':      'Toldo Vela',
+  'pasto_sintetico': 'Pasto Sintético',
+  'caucho_continuo': 'Caucho Continuo',
 }
 
 const GRUPO_STYLES = {
@@ -376,18 +387,16 @@ function TabDatosCrear({
 ══════════════════════════════════════════════ */
 function TabChecklist({ visita, onProductosGuardados }) {
   const tieneProductos = Array.isArray(visita.productos) && visita.productos.length > 0
-  console.log('[checklist] visita.productos:', JSON.stringify(visita?.productos))
-  console.log('[checklist] tipo:', typeof visita?.productos)
 
   const [productosLocales, setProductosLocales] = useState(visita.productos || [])
   const [seleccionando,    setSeleccionando]    = useState(!tieneProductos)
   const [actualizando,     setActualizando]     = useState(false)
 
+  const [preguntas,  setPreguntas]  = useState([])
   const [respuestas, setRespuestas] = useState({})
   const [loadingCL,  setLoadingCL]  = useState(!seleccionando)
   const timers = useRef({})
 
-  const preguntas   = buildChecklist(productosLocales)
   const respondidas = preguntas.filter(q => (respuestas[q.id] || '').trim() !== '').length
   const pct         = preguntas.length > 0 ? Math.round((respondidas / preguntas.length) * 100) : 0
 
@@ -395,19 +404,44 @@ function TabChecklist({ visita, onProductosGuardados }) {
     if (seleccionando) return
     async function load() {
       setLoadingCL(true)
-      const { data } = await supabase
+
+      const productosSnake = productosLocales.map(p => LABEL_TO_SNAKE[p] || p)
+
+      const { data: preguntasDB } = await supabase
+        .from('visita_preguntas')
+        .select('*')
+        .eq('empresa_id', visita.empresa_id)
+        .eq('activo', true)
+        .order('orden')
+
+      if (preguntasDB) {
+        const filtered = preguntasDB
+          .filter(p => p.producto === 'general' || productosSnake.includes(p.producto))
+          .map(p => ({
+            id:       p.id,
+            label:    p.label,
+            critical: p.critical,
+            kind:     p.producto === 'general' ? 'date' : null,
+            product:  p.producto === 'general' ? null : p.producto,
+            general:  p.producto === 'general',
+          }))
+        setPreguntas(filtered)
+      }
+
+      const { data: answers } = await supabase
         .from('visita_checklist')
         .select('*')
         .eq('visita_id', visita.id)
-      if (data) {
+      if (answers) {
         const map = {}
-        data.forEach(row => { map[row.pregunta_id] = row.respuesta })
+        answers.forEach(row => { map[row.pregunta_id] = row.respuesta })
         setRespuestas(map)
       }
+
       setLoadingCL(false)
     }
     void load()
-  }, [visita.id, seleccionando])
+  }, [visita.id, visita.empresa_id, seleccionando, productosLocales])
 
   function toggleLocal(label) {
     setProductosLocales(prev =>
@@ -487,7 +521,7 @@ function TabChecklist({ visita, onProductosGuardados }) {
   }
 
   const grupos = preguntas.reduce((acc, q) => {
-    const key = q.general ? 'General' : (q.product || 'General')
+    const key = q.general || !q.product ? 'General' : (SNAKE_TO_LABEL[q.product] || q.product)
     const last = acc[acc.length - 1]
     if (last && last.key === key) last.preguntas.push(q)
     else acc.push({ key, preguntas: [q] })

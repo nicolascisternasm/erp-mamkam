@@ -1135,6 +1135,211 @@ function TabIntegraciones() {
   )
 }
 
+/* ── Tab Visitas ─────────────────────────────────────────────────── */
+const PRODUCTOS_VISITA = [
+  { key: 'general',         label: 'General',         headerCls: 'bg-slate-100 text-slate-600' },
+  { key: 'toldo_vela',      label: 'Toldo Vela',      headerCls: 'bg-amber-50 text-amber-800' },
+  { key: 'pasto_sintetico', label: 'Pasto Sintético',  headerCls: 'bg-emerald-50 text-emerald-800' },
+  { key: 'caucho_continuo', label: 'Caucho Continuo',  headerCls: 'bg-red-50 text-red-800' },
+]
+
+function TabVisitas() {
+  const { user } = useAuth()
+  const empresaId = user?.empresa_id
+
+  const [preguntas, setPreguntas] = useState([])
+  const [loading,   setLoading]   = useState(true)
+  const [editando,  setEditando]  = useState(null)   // { id, label, critical }
+  const [agregando, setAgregando] = useState(null)   // { producto, label, critical }
+  const [saving,    setSaving]    = useState(false)
+  const [deleting,  setDeleting]  = useState(null)
+
+  const cargar = async () => {
+    setLoading(true)
+    const { data } = await supabase
+      .from('visita_preguntas')
+      .select('*')
+      .eq('empresa_id', empresaId)
+      .eq('activo', true)
+      .order('orden')
+    setPreguntas(data || [])
+    setLoading(false)
+  }
+
+  useEffect(() => { if (empresaId) void cargar() }, [empresaId])
+
+  const handleGuardarEdicion = async () => {
+    if (!editando?.label?.trim()) return
+    setSaving(true)
+    await supabase.from('visita_preguntas')
+      .update({ label: editando.label.trim(), critical: editando.critical })
+      .eq('id', editando.id)
+    await cargar()
+    setEditando(null)
+    setSaving(false)
+  }
+
+  const handleAgregar = async () => {
+    if (!agregando?.label?.trim()) return
+    setSaving(true)
+    const max = preguntas.filter(p => p.producto === agregando.producto)
+      .reduce((m, p) => Math.max(m, p.orden), 0)
+    await supabase.from('visita_preguntas').insert({
+      empresa_id: empresaId,
+      producto:   agregando.producto,
+      label:      agregando.label.trim(),
+      critical:   agregando.critical,
+      orden:      max + 1,
+      activo:     true,
+    })
+    await cargar()
+    setAgregando(null)
+    setSaving(false)
+  }
+
+  const handleEliminar = async (id) => {
+    setDeleting(id)
+    await supabase.from('visita_preguntas').update({ activo: false }).eq('id', id)
+    setPreguntas(prev => prev.filter(p => p.id !== id))
+    setDeleting(null)
+  }
+
+  const handleToggleCritical = async (q) => {
+    await supabase.from('visita_preguntas').update({ critical: !q.critical }).eq('id', q.id)
+    setPreguntas(prev => prev.map(p => p.id === q.id ? { ...p, critical: !p.critical } : p))
+  }
+
+  if (loading) return (
+    <div className="flex justify-center py-12">
+      <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
+    </div>
+  )
+
+  return (
+    <div className="space-y-5">
+      <p className="text-sm text-slate-500">Gestiona las preguntas del checklist de visitas agrupadas por producto. Los cambios aplican de inmediato.</p>
+
+      {PRODUCTOS_VISITA.map(prod => {
+        const qs = preguntas.filter(p => p.producto === prod.key)
+        return (
+          <div key={prod.key} className="card overflow-hidden">
+            {/* Header del grupo */}
+            <div className={`flex items-center justify-between px-4 py-2.5 ${prod.headerCls}`}>
+              <span className="text-xs font-bold uppercase tracking-wide">{prod.label}</span>
+              <button
+                onClick={() => { setAgregando({ producto: prod.key, label: '', critical: false }); setEditando(null) }}
+                className="p-1 rounded hover:bg-black/10 transition-colors"
+                title="Agregar pregunta"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {qs.length === 0 && agregando?.producto !== prod.key && (
+              <p className="px-4 py-3 text-xs text-slate-400 italic">Sin preguntas. Usa el + para agregar una.</p>
+            )}
+
+            <div className="divide-y divide-slate-100">
+              {qs.map(q => (
+                <div key={q.id} className="px-4 py-2.5">
+                  {editando?.id === q.id ? (
+                    /* Fila de edición */
+                    <div className="flex items-center gap-2">
+                      <input
+                        autoFocus
+                        value={editando.label}
+                        onChange={e => setEditando(p => ({ ...p, label: e.target.value }))}
+                        onKeyDown={e => { if (e.key === 'Enter') handleGuardarEdicion(); if (e.key === 'Escape') setEditando(null) }}
+                        className="input-base flex-1 text-sm py-1"
+                      />
+                      <label className="flex items-center gap-1.5 text-xs text-slate-600 shrink-0 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={editando.critical}
+                          onChange={e => setEditando(p => ({ ...p, critical: e.target.checked }))}
+                          className="accent-amber-500"
+                        />
+                        Crítica
+                      </label>
+                      <button onClick={handleGuardarEdicion} disabled={saving} className="btn-primary text-xs py-1 px-3 disabled:opacity-50">
+                        {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : 'OK'}
+                      </button>
+                      <button onClick={() => setEditando(null)} className="btn-secondary text-xs py-1 px-2">
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    /* Fila de lectura */
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-slate-700 flex-1 leading-snug">{q.label}</span>
+                      {q.critical && (
+                        <span className="text-[11px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded shrink-0">⚠ Crítica</span>
+                      )}
+                      <div className="flex items-center gap-0.5 shrink-0">
+                        <button
+                          onClick={() => handleToggleCritical(q)}
+                          title={q.critical ? 'Quitar crítica' : 'Marcar como crítica'}
+                          className={`p-1.5 rounded-lg transition-colors ${q.critical ? 'text-amber-500 hover:bg-amber-50' : 'text-slate-300 hover:text-amber-500 hover:bg-amber-50'}`}
+                        >
+                          <AlertCircle className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => { setEditando({ id: q.id, label: q.label, critical: q.critical }); setAgregando(null) }}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleEliminar(q.id)}
+                          disabled={deleting === q.id}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-40"
+                        >
+                          {deleting === q.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {/* Fila para agregar nueva pregunta */}
+              {agregando?.producto === prod.key && (
+                <div className="px-4 py-2.5 bg-indigo-50/50">
+                  <div className="flex items-center gap-2">
+                    <input
+                      autoFocus
+                      value={agregando.label}
+                      onChange={e => setAgregando(p => ({ ...p, label: e.target.value }))}
+                      onKeyDown={e => { if (e.key === 'Enter') handleAgregar(); if (e.key === 'Escape') setAgregando(null) }}
+                      placeholder="Texto de la pregunta..."
+                      className="input-base flex-1 text-sm py-1"
+                    />
+                    <label className="flex items-center gap-1.5 text-xs text-slate-600 shrink-0 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={agregando.critical}
+                        onChange={e => setAgregando(p => ({ ...p, critical: e.target.checked }))}
+                        className="accent-amber-500"
+                      />
+                      Crítica
+                    </label>
+                    <button onClick={handleAgregar} disabled={saving || !agregando.label.trim()} className="btn-primary text-xs py-1 px-3 disabled:opacity-50">
+                      {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Agregar'}
+                    </button>
+                    <button onClick={() => setAgregando(null)} className="btn-secondary text-xs py-1 px-2">
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 /* ── Página principal ────────────────────────────────────────────── */
 export default function ConfiguracionPage() {
   const { user, updateUser } = useAuth()
@@ -1155,6 +1360,7 @@ export default function ConfiguracionPage() {
       { key: 'usuarios',     label: 'Usuarios'             },
       { key: 'cuentas',      label: 'Cuentas Contables'   },
       { key: 'tipos-doc',    label: 'Tipos de Documento'  },
+      { key: 'visitas',      label: 'Visitas'             },
       { key: 'integraciones', label: 'Integraciones'      },
     ] : []),
   ]
@@ -1202,6 +1408,7 @@ export default function ConfiguracionPage() {
       {tab === 'usuarios'      && <UsuariosPage />}
       {tab === 'cuentas'       && <TabCuentasContables />}
       {tab === 'tipos-doc'     && <TabTiposDocumento />}
+      {tab === 'visitas'       && <TabVisitas />}
       {tab === 'integraciones' && <TabIntegraciones />}
     </div>
   )
