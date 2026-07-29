@@ -18,6 +18,10 @@ export async function analizarComprobanteIA(file) {
     return null
   }
 
+  console.log('[anthropic] enviando request...')
+  console.log('[anthropic] tipo archivo:', file.type)
+  console.log('[anthropic] tamaño base64:', base64.length)
+
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -25,6 +29,7 @@ export async function analizarComprobanteIA(file) {
       'x-api-key': apiKey,
       'anthropic-version': '2023-06-01',
       'anthropic-dangerous-direct-browser-access': 'true',
+      ...(file.type === 'application/pdf' ? { 'anthropic-beta': 'pdfs-2024-09-25' } : {}),
     },
     body: JSON.stringify({
       model: 'claude-sonnet-4-6',
@@ -52,12 +57,19 @@ Responde SOLO con un JSON válido sin texto adicional ni backticks:
     }),
   })
 
-  if (!response.ok) return null
+  console.log('[anthropic] status:', response.status)
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.log('[anthropic] error body:', errorText)
+    return null
+  }
   const data = await response.json()
   const text = data.content?.[0]?.text || ''
+  console.log('[anthropic] respuesta texto:', text)
   try {
     return JSON.parse(text.replace(/```json|```/g, '').trim())
   } catch {
+    console.log('[anthropic] error parseando JSON:', text)
     return null
   }
 }
