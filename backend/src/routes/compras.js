@@ -4,23 +4,6 @@ const { requireAuth, requireRole } = require('../middleware/auth.js')
 
 const router = Router()
 
-/* ── SMTP transporter ───────────────────────────────────────────── */
-function createTransporter() {
-  const nodemailer = require('nodemailer')
-  return nodemailer.createTransport({
-    host:   process.env.SMTP_HOST,
-    port:   parseInt(process.env.SMTP_PORT) || 465,
-    secure: parseInt(process.env.SMTP_PORT) === 465,
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
-    connectionTimeout: 10000,
-    greetingTimeout:   10000,
-    socketTimeout:     10000,
-  })
-}
-
 /* ── Formatters ─────────────────────────────────────────────────── */
 function formatCLP(n) {
   return new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' }).format(n ?? 0)
@@ -213,81 +196,47 @@ router.post('/:id/enviar-email', requireAuth, requireRole('admin'), async (req, 
     })
   }
 
-  /* 3. Verificar credenciales SMTP */
-  console.log('[enviar-email] SMTP config:', !!process.env.SMTP_HOST)
-  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
-    /* Sin SMTP configurado: solo actualizar estado */
+  /* 3. Verificar Brevo API key */
+  console.log('[enviar-email] Brevo config:', !!process.env.BREVO_API_KEY)
+  if (!process.env.BREVO_API_KEY) {
     const { error: updErr } = await supabase
       .from('compras')
       .update({ estado: 'enviada' })
       .eq('id', id)
     if (updErr) return res.status(500).json({ ok: false, error: updErr.message })
-    return res.json({ ok: true, modo: 'sin_smtp', warning: 'SMTP no configurado: estado actualizado pero email no enviado.' })
+    return res.json({ ok: true, modo: 'sin_brevo', warning: 'BREVO_API_KEY no configurado: estado actualizado pero email no enviado.' })
   }
 
-  /* 4. Construir adjuntos */
-  console.log('[enviar-email] descargando adjuntos...')
+  /* 4. Enviar email via Brevo */
   const { pdfUrl } = req.body
-  const attachments = []
-
-  /* Adjunto: PDF de la OC (generado en el frontend) */
-  if (pdfUrl) {
-    try {
-      const resp = await fetch(pdfUrl)
-      if (resp.ok) {
-        const buf = Buffer.from(await resp.arrayBuffer())
-        attachments.push({ filename: `OC_${oc.numero}.pdf`, content: buf, contentType: 'application/pdf' })
-      }
-    } catch { /* adjunto opcional, no bloquear */ }
-  }
-
-  /* Adjunto: comprobante de pago legacy (voucher único) */
-  if (oc.voucher?.url) {
-    try {
-      const resp = await fetch(oc.voucher.url)
-      if (resp.ok) {
-        const buf = Buffer.from(await resp.arrayBuffer())
-        const ext = (oc.voucher.nombre || 'comprobante.pdf').split('.').pop().toLowerCase()
-        attachments.push({ filename: `comprobante_pago_${oc.numero}.${ext}`, content: buf })
-      }
-    } catch { /* adjunto opcional, no bloquear */ }
-  }
-
-  /* Adjuntos: array de comprobantes (nuevo sistema) */
-  if (Array.isArray(oc.comprobantes)) {
-    for (let i = 0; i < oc.comprobantes.length; i++) {
-      const comp = oc.comprobantes[i]
-      if (!comp?.url) continue
-      try {
-        const resp = await fetch(comp.url)
-        if (resp.ok) {
-          const buf = Buffer.from(await resp.arrayBuffer())
-          const ext = (comp.nombre || 'comprobante.pdf').split('.').pop().toLowerCase()
-          attachments.push({ filename: `comprobante_${i + 1}_${oc.numero}.${ext}`, content: buf })
-        }
-      } catch { /* adjunto opcional, no bloquear */ }
-    }
-  }
-
-  /* 5. Enviar email */
-  console.log('[enviar-email] enviando con nodemailer...')
+  console.log('[enviar-email] enviando con Brevo...')
   try {
-    const transporter = createTransporter()
-    const mailOptions = {
-      from:    `"MAMKAM" <${process.env.SMTP_USER}>`,
-      to:      proveedorEmail,
-      cc:      'contacto@mamkam.cl',
-      subject: `Orden de Compra ${oc.numero} - MAMKAM`,
-      html:    buildEmailHTML(oc),
-      attachments,
-    }
-    await Promise.race([
-      transporter.sendMail(mailOptions),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('SMTP timeout después de 10s')), 10000)
-      ),
-    ])
-    console.log('[enviar-email] email enviado OK')
+    const brevoRes = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        'accept':       'application/json',
+        'api-key':      process.env.BREVO_API_KEY,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        sender:      { name: 'MAMKAM', email: process.env.SMTP_USER || 'contacto@mamkam.cl' },
+        to:          [{ email: proveedorEmail }],
+        cc:          [{ email: process.env.SMTP_USER || 'contacto@mamkam.cl' }],
+        subject:     `Orden de Compra ${oc.numero} - MAMKAM`,
+        htmlContent: `
+          <h2>Orden de Compra ${oc.numero}</h2>
+          <p>Estimado proveedor,</p>
+          <p>Adjunto encontrará la Orden de Compra ${oc.numero} por un monto de $${oc.total?.toLocaleString('es-CL')}.</p>
+          <p>Por favor confirmar recepción.</p>
+          <br>
+          <p>Saludos,<br>MAMKAM</p>
+        `,
+        attachment: pdfUrl ? [{ url: pdfUrl, name: `${oc.numero}.pdf` }] : [],
+      }),
+    })
+    const brevoData = await brevoRes.json()
+    if (!brevoRes.ok) throw new Error(brevoData.message || 'Error Brevo')
+    console.log('[enviar-email] email enviado OK via Brevo')
   } catch (mailErr) {
     return res.status(500).json({ ok: false, error: `Error al enviar email: ${mailErr.message}` })
   }
