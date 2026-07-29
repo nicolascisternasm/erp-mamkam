@@ -386,16 +386,27 @@ function TabDatosCrear({
    TAB CHECKLIST
 ══════════════════════════════════════════════ */
 function TabChecklist({ visita, onProductosGuardados }) {
-  const [productosLocales, setProductosLocales] = useState(
-    Array.isArray(visita.productos) ? visita.productos : []
-  )
+  /* Fix 2: normalizar valores de visita.productos al montar (labels o snake_case) */
+  const [productosLocales, setProductosLocales] = useState(() => {
+    if (!Array.isArray(visita.productos)) return []
+    const validLabels = new Set(PRODUCTOS_OPCIONES.map(p => p.label))
+    return visita.productos
+      .map(v => {
+        if (validLabels.has(v))  return v
+        if (SNAKE_TO_LABEL[v])   return SNAKE_TO_LABEL[v]
+        console.warn('[checklist] valor desconocido en visita.productos:', v)
+        return null
+      })
+      .filter(Boolean)
+  })
   const [preguntas,  setPreguntas]  = useState([])
   const [respuestas, setRespuestas] = useState({})
   const [loadingCL,  setLoadingCL]  = useState(
     Array.isArray(visita.productos) && visita.productos.length > 0
   )
-  const timers  = useRef({})
-  const saveRef = useRef(null)
+  const timers     = useRef({})
+  const saveRef    = useRef(null)
+  const fetchIdRef = useRef(0)  /* Fix 1: guard contra race conditions */
 
   useEffect(() => {
     if (productosLocales.length === 0) {
@@ -403,6 +414,7 @@ function TabChecklist({ visita, onProductosGuardados }) {
       setLoadingCL(false)
       return
     }
+    const fetchId = ++fetchIdRef.current
     async function load() {
       setLoadingCL(true)
       const productosSnake = productosLocales.map(p => LABEL_TO_SNAKE[p] || p)
@@ -412,6 +424,8 @@ function TabChecklist({ visita, onProductosGuardados }) {
         .eq('empresa_id', visita.empresa_id)
         .eq('activo', true)
         .order('orden')
+      /* Descartar si llegó una respuesta de un fetch más viejo */
+      if (fetchId !== fetchIdRef.current) return
       if (preguntasDB) {
         setPreguntas(
           preguntasDB
@@ -430,6 +444,7 @@ function TabChecklist({ visita, onProductosGuardados }) {
         .from('visita_checklist')
         .select('*')
         .eq('visita_id', visita.id)
+      if (fetchId !== fetchIdRef.current) return
       if (answers) {
         const map = {}
         answers.forEach(row => { map[row.pregunta_id] = row.respuesta })
