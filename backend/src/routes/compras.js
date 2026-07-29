@@ -181,6 +181,7 @@ router.patch('/:id', requireAuth, requireRole('admin'), async (req, res) => {
 /* ── POST /:id/enviar-email ─────────────────────────────────────── */
 router.post('/:id/enviar-email', requireAuth, requireRole('admin'), async (req, res) => {
   const { id } = req.params
+  console.log('[enviar-email] INICIO', id)
 
   /* 1. Obtener la compra */
   const { data: oc, error: ocErr } = await supabase
@@ -200,6 +201,7 @@ router.post('/:id/enviar-email', requireAuth, requireRole('admin'), async (req, 
       .single()
     proveedorEmail = prov?.email || null
   }
+  console.log('[enviar-email] proveedor email:', proveedorEmail)
 
   if (!proveedorEmail) {
     return res.status(400).json({
@@ -209,6 +211,7 @@ router.post('/:id/enviar-email', requireAuth, requireRole('admin'), async (req, 
   }
 
   /* 3. Verificar credenciales SMTP */
+  console.log('[enviar-email] SMTP config:', !!process.env.SMTP_HOST)
   if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
     /* Sin SMTP configurado: solo actualizar estado */
     const { error: updErr } = await supabase
@@ -220,6 +223,7 @@ router.post('/:id/enviar-email', requireAuth, requireRole('admin'), async (req, 
   }
 
   /* 4. Construir adjuntos */
+  console.log('[enviar-email] descargando adjuntos...')
   const { pdfUrl } = req.body
   const attachments = []
 
@@ -263,6 +267,7 @@ router.post('/:id/enviar-email', requireAuth, requireRole('admin'), async (req, 
   }
 
   /* 5. Enviar email */
+  console.log('[enviar-email] enviando con nodemailer...')
   try {
     const transporter = createTransporter()
     await transporter.sendMail({
@@ -284,6 +289,7 @@ router.post('/:id/enviar-email', requireAuth, requireRole('admin'), async (req, 
     .eq('id', id)
   if (updErr) return res.status(500).json({ ok: false, error: updErr.message })
 
+  console.log('[enviar-email] FIN')
   res.json({ ok: true })
 })
 

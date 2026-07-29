@@ -383,6 +383,7 @@ export default function ComprasPage() {
 
   const doEnviarEmail = async (oc) => {
     if (enviandoId) return
+    console.log('[email] INICIO', oc.id)
     setConfirmEnvio(null)
     setEnviandoId(oc.id)
     let pdfUrl = null
@@ -394,6 +395,7 @@ export default function ComprasPage() {
         await new Promise(r => setTimeout(r, 400))
 
         if (ocPdfRef.current) {
+          console.log('[email] subiendo PDF...')
           const pdfBlob   = await generatePDFBlob(ocPdfRef.current)
           const empresaId = empresa?.id || user?.empresa_id
           const path      = `${empresaId}/${oc.numero}.pdf`
@@ -402,6 +404,7 @@ export default function ComprasPage() {
             .upload(path, pdfBlob, { contentType: 'application/pdf', upsert: true })
           if (!upErr) {
             pdfUrl = supabase.storage.from('pago_proveedores').getPublicUrl(path).data.publicUrl
+            console.log('[email] PDF subido:', pdfUrl)
           } else {
             console.error('[doEnviarEmail] error subiendo PDF:', upErr.message)
           }
@@ -415,6 +418,7 @@ export default function ComprasPage() {
       }
 
       /* 2. Enviar email con pdfUrl */
+      console.log('[email] llamando backend...')
       const stored = localStorage.getItem('mamkam_auth')
       const token  = stored ? JSON.parse(stored).token : null
       const base   = import.meta.env.VITE_API_URL || 'https://erp-mamkam-production.up.railway.app/api'
@@ -427,12 +431,14 @@ export default function ComprasPage() {
         body: JSON.stringify({ pdfUrl }),
       })
       const data = await res.json()
+      console.log('[email] respuesta backend:', data)
       if (!data.ok) throw new Error(data.error || 'Error al enviar el correo')
       updateCompra(oc.id, { estado: 'enviada' })
       showToast('success', `OC ${oc.numero} enviada por correo`)
     } catch (err) {
       showToast('error', err.message || 'Error al enviar el correo')
     } finally {
+      console.log('[email] FIN - limpiando estado')
       setEnviandoId(null)
     }
   }
