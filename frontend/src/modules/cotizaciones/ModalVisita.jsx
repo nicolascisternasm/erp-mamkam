@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { X, CalendarDays, ClipboardList, Image as ImageIcon, Bot, Loader2, ChevronRight, ChevronLeft } from 'lucide-react'
+import { X, CalendarDays, ClipboardList, Image as ImageIcon, Bot, Loader2, ChevronRight, ChevronLeft, Check } from 'lucide-react'
 import { supabase } from '../../services/supabase'
 import { useAuth } from '../auth/AuthContext'
 import { useApp } from '../../context/AppContext'
@@ -386,48 +386,46 @@ function TabDatosCrear({
    TAB CHECKLIST
 ══════════════════════════════════════════════ */
 function TabChecklist({ visita, onProductosGuardados }) {
-  const tieneProductos = Array.isArray(visita.productos) && visita.productos.length > 0
-
-  const [productosLocales, setProductosLocales] = useState(visita.productos || [])
-  const [seleccionando,    setSeleccionando]    = useState(!tieneProductos)
-  const [actualizando,     setActualizando]     = useState(false)
-
+  const [productosLocales, setProductosLocales] = useState(
+    Array.isArray(visita.productos) ? visita.productos : []
+  )
   const [preguntas,  setPreguntas]  = useState([])
   const [respuestas, setRespuestas] = useState({})
-  const [loadingCL,  setLoadingCL]  = useState(!seleccionando)
-  const timers = useRef({})
-
-  const respondidas = preguntas.filter(q => (respuestas[q.id] || '').trim() !== '').length
-  const pct         = preguntas.length > 0 ? Math.round((respondidas / preguntas.length) * 100) : 0
+  const [loadingCL,  setLoadingCL]  = useState(
+    Array.isArray(visita.productos) && visita.productos.length > 0
+  )
+  const timers  = useRef({})
+  const saveRef = useRef(null)
 
   useEffect(() => {
-    if (seleccionando) return
+    if (productosLocales.length === 0) {
+      setPreguntas([])
+      setLoadingCL(false)
+      return
+    }
     async function load() {
       setLoadingCL(true)
-
       const productosSnake = productosLocales.map(p => LABEL_TO_SNAKE[p] || p)
-
       const { data: preguntasDB } = await supabase
         .from('visita_preguntas')
         .select('*')
         .eq('empresa_id', visita.empresa_id)
         .eq('activo', true)
         .order('orden')
-
       if (preguntasDB) {
-        const filtered = preguntasDB
-          .filter(p => p.producto === 'general' || productosSnake.includes(p.producto))
-          .map(p => ({
-            id:       p.id,
-            label:    p.label,
-            critical: p.critical,
-            kind:     p.producto === 'general' ? 'date' : null,
-            product:  p.producto === 'general' ? null : p.producto,
-            general:  p.producto === 'general',
-          }))
-        setPreguntas(filtered)
+        setPreguntas(
+          preguntasDB
+            .filter(p => p.producto === 'general' || productosSnake.includes(p.producto))
+            .map(p => ({
+              id:       p.id,
+              label:    p.label,
+              critical: p.critical,
+              kind:     p.producto === 'general' ? 'date' : null,
+              product:  p.producto === 'general' ? null : p.producto,
+              general:  p.producto === 'general',
+            }))
+        )
       }
-
       const { data: answers } = await supabase
         .from('visita_checklist')
         .select('*')
@@ -437,24 +435,21 @@ function TabChecklist({ visita, onProductosGuardados }) {
         answers.forEach(row => { map[row.pregunta_id] = row.respuesta })
         setRespuestas(map)
       }
-
       setLoadingCL(false)
     }
     void load()
-  }, [visita.id, visita.empresa_id, seleccionando, productosLocales])
+  }, [visita.id, visita.empresa_id, productosLocales])
 
-  function toggleLocal(label) {
-    setProductosLocales(prev =>
-      prev.includes(label) ? prev.filter(x => x !== label) : [...prev, label]
-    )
-  }
-
-  async function handleGuardarProductos() {
-    setActualizando(true)
-    await supabase.from('visitas').update({ productos: productosLocales }).eq('id', visita.id)
-    onProductosGuardados(productosLocales)
-    setSeleccionando(false)
-    setActualizando(false)
+  function toggleProducto(label) {
+    const next = productosLocales.includes(label)
+      ? productosLocales.filter(x => x !== label)
+      : [...productosLocales, label]
+    setProductosLocales(next)
+    clearTimeout(saveRef.current)
+    saveRef.current = setTimeout(async () => {
+      await supabase.from('visitas').update({ productos: next }).eq('id', visita.id)
+      onProductosGuardados(next)
+    }, 500)
   }
 
   function handleChange(pregunta, valor) {
@@ -474,98 +469,124 @@ function TabChecklist({ visita, onProductosGuardados }) {
     }, 600)
   }
 
-  /* ── Selector de productos ── */
-  if (seleccionando) {
-    return (
-      <div className="px-6 py-8 max-w-md">
-        <h3 className="text-sm font-semibold text-slate-800 mb-1">Selecciona los productos de esta visita</h3>
-        <p className="text-xs text-slate-400 mb-5">Las preguntas del checklist se adaptarán a los productos elegidos.</p>
-        <div className="flex flex-col gap-3 mb-8">
-          {PRODUCTOS_OPCIONES.map(p => (
-            <label key={p.id} className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-colors
-              ${productosLocales.includes(p.label)
-                ? 'border-indigo-400 bg-indigo-50'
-                : 'border-slate-200 bg-white hover:border-slate-300'}`}
-            >
-              <input
-                type="checkbox"
-                checked={productosLocales.includes(p.label)}
-                onChange={() => toggleLocal(p.label)}
-                className="w-4 h-4 accent-indigo-600 cursor-pointer"
-              />
-              <span className={`text-sm font-semibold ${productosLocales.includes(p.label) ? 'text-indigo-700' : 'text-slate-700'}`}>
-                {p.label}
-              </span>
-            </label>
-          ))}
-        </div>
-        <button
-          onClick={handleGuardarProductos}
-          disabled={actualizando || productosLocales.length === 0}
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 transition-colors disabled:opacity-50"
-        >
-          {actualizando && <Loader2 className="w-4 h-4 animate-spin" />}
-          Confirmar selección
-        </button>
-      </div>
-    )
-  }
+  /* Separar generales de las de producto */
+  const preguntasGenerales = preguntas.filter(q => q.general)
+  const preguntasProducto  = preguntas.filter(q => !q.general)
 
-  /* ── Checklist ── */
-  if (loadingCL) {
-    return (
-      <div className="flex items-center justify-center h-40">
-        <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
-      </div>
-    )
-  }
+  /* Agrupar por producto usando Map (preserva orden de primera aparición, sin duplicados) */
+  const gruposMap = new Map()
+  preguntasProducto.forEach(q => {
+    const key = SNAKE_TO_LABEL[q.product] || q.product
+    if (!gruposMap.has(key)) gruposMap.set(key, [])
+    gruposMap.get(key).push(q)
+  })
+  const grupos = Array.from(gruposMap, ([key, items]) => ({ key, preguntas: items }))
 
-  const grupos = preguntas.reduce((acc, q) => {
-    const key = q.general || !q.product ? 'General' : (SNAKE_TO_LABEL[q.product] || q.product)
-    const last = acc[acc.length - 1]
-    if (last && last.key === key) last.preguntas.push(q)
-    else acc.push({ key, preguntas: [q] })
-    return acc
-  }, [])
+  const respondidas = preguntas.filter(q => (respuestas[q.id] || '').trim() !== '').length
+  const pct         = preguntas.length > 0 ? Math.round((respondidas / preguntas.length) * 100) : 0
 
   return (
-    <div className="px-6 py-5 space-y-6">
-      {/* Barra de progreso */}
-      <div>
-        <div className="flex justify-between text-xs text-slate-500 mb-1.5">
-          <span>{respondidas} de {preguntas.length} preguntas respondidas</span>
-          <span className="font-semibold text-slate-700">{pct}%</span>
-        </div>
-        <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-          <div
-            className="h-2 rounded-full transition-all duration-500"
-            style={{ width: `${pct}%`, background: pct === 100 ? '#10b981' : '#6366f1' }}
-          />
-        </div>
+    <div className="px-6 py-5 space-y-5">
+
+      {/* ── Selector de productos — siempre visible ── */}
+      <div className="flex flex-wrap gap-2 pb-3 border-b border-slate-100">
+        {PRODUCTOS_OPCIONES.map(p => {
+          const checked = productosLocales.includes(p.label)
+          return (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => toggleProducto(p.label)}
+              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-semibold border-2 transition-colors ${
+                checked
+                  ? 'border-indigo-400 bg-indigo-50 text-indigo-700'
+                  : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-700'
+              }`}
+            >
+              <span className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${
+                checked ? 'border-indigo-500 bg-indigo-500' : 'border-slate-300 bg-white'
+              }`}>
+                {checked && <Check className="w-2 h-2 text-white" strokeWidth={3.5} />}
+              </span>
+              {p.label}
+            </button>
+          )
+        })}
       </div>
 
-      {/* Grupos de preguntas */}
-      {grupos.map(grupo => {
-        const style = GRUPO_STYLES[grupo.key] || GRUPO_STYLES['General']
-        return (
-          <div key={grupo.key}>
-            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg mb-3 ${style.header}`}>
-              <span className={`w-2 h-2 rounded-full shrink-0 ${style.dot}`} />
-              <span className="text-xs font-bold tracking-wide uppercase">{grupo.key}</span>
+      {/* ── Sin productos: estado vacío ── */}
+      {productosLocales.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-12">
+          <ClipboardList className="w-10 h-10 mb-3 text-slate-200" />
+          <p className="text-sm font-medium text-slate-500">Selecciona al menos un producto</p>
+          <p className="text-xs text-slate-400 mt-1">Las preguntas del checklist aparecerán aquí.</p>
+        </div>
+      ) : loadingCL ? (
+        <div className="flex items-center justify-center h-32">
+          <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
+        </div>
+      ) : (
+        <>
+          {/* Barra de progreso */}
+          <div>
+            <div className="flex justify-between text-xs text-slate-500 mb-1.5">
+              <span>{respondidas} de {preguntas.length} preguntas respondidas</span>
+              <span className="font-semibold text-slate-700">{pct}%</span>
             </div>
-            <div className="space-y-2.5">
-              {grupo.preguntas.map(q => (
-                <PreguntaRow
-                  key={q.id}
-                  pregunta={q}
-                  valor={respuestas[q.id] || ''}
-                  onChange={handleChange}
-                />
-              ))}
+            <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+              <div
+                className="h-2 rounded-full transition-all duration-500"
+                style={{ width: `${pct}%`, background: pct === 100 ? '#10b981' : '#6366f1' }}
+              />
             </div>
           </div>
-        )
-      })}
+
+          {/* Fechas generales — tarjeta compacta sin badge Crítica */}
+          {preguntasGenerales.length > 0 && (
+            <div className="bg-white border border-slate-200 rounded-xl p-4">
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Fechas estimadas</p>
+              <div className="space-y-3">
+                {preguntasGenerales.map(q => (
+                  <div key={q.id} className="flex items-center justify-between gap-4">
+                    <span className="text-xs text-slate-600 flex-1">{q.label}</span>
+                    <input
+                      type="date"
+                      value={respuestas[q.id] || ''}
+                      onChange={e => handleChange(q, e.target.value)}
+                      className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Grupos por producto */}
+          <div className="space-y-6">
+            {grupos.map(grupo => {
+              const style = GRUPO_STYLES[grupo.key] || { header: 'bg-slate-100 text-slate-600', dot: 'bg-slate-400' }
+              return (
+                <div key={grupo.key}>
+                  <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg mb-3 ${style.header}`}>
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${style.dot}`} />
+                    <span className="text-xs font-bold tracking-wide uppercase">{grupo.key}</span>
+                  </div>
+                  <div className="space-y-2.5">
+                    {grupo.preguntas.map(q => (
+                      <PreguntaRow
+                        key={q.id}
+                        pregunta={q}
+                        valor={respuestas[q.id] || ''}
+                        onChange={handleChange}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </>
+      )}
     </div>
   )
 }
