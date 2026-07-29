@@ -397,10 +397,10 @@ export default function ComprasPage() {
           const empresaId = empresa?.id || user?.empresa_id
           const path      = `${empresaId}/${oc.numero}.pdf`
           const { error: upErr } = await supabase.storage
-            .from('ocs-pdf')
+            .from('pago_proveedores')
             .upload(path, pdfBlob, { contentType: 'application/pdf', upsert: true })
           if (!upErr) {
-            pdfUrl = supabase.storage.from('ocs-pdf').getPublicUrl(path).data.publicUrl
+            pdfUrl = supabase.storage.from('pago_proveedores').getPublicUrl(path).data.publicUrl
           } else {
             console.error('[doEnviarEmail] error subiendo PDF:', upErr.message)
           }
