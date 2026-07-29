@@ -1156,12 +1156,15 @@ function TabVisitas() {
 
   const cargar = async () => {
     setLoading(true)
-    const { data } = await supabase
+    console.log('[visitas-config] empresaId:', empresaId)
+    const { data, error } = await supabase
       .from('visita_preguntas')
       .select('*')
       .eq('empresa_id', empresaId)
       .eq('activo', true)
       .order('orden')
+    console.log('[visitas-config] preguntas cargadas:', data)
+    console.log('[visitas-config] error:', error)
     setPreguntas(data || [])
     setLoading(false)
   }
