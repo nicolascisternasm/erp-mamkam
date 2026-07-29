@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react'
 import { X, CalendarDays, ClipboardList, Image as ImageIcon, Bot, Loader2, ChevronRight, ChevronLeft, Check, ChevronDown, Upload, Trash2 } from 'lucide-react'
 import { supabase } from '../../services/supabase'
 import { useAuth } from '../auth/AuthContext'
@@ -45,6 +45,7 @@ export default function ModalVisita({ cot, onClose }) {
   const { user }         = useAuth()
   const { trabajadores } = useApp()
 
+  const checklistRef = useRef(null)
   const [tab,      setTab]      = useState('Datos')
   const [visita,   setVisita]   = useState(null)
   const [loading,  setLoading]  = useState(true)
@@ -161,10 +162,10 @@ export default function ModalVisita({ cot, onClose }) {
     /* Tabs intermedios (Checklist, Fotos) → Anterior + Siguiente */
     return (
       <>
-        <button className={btnGray} onClick={() => setTab(TABS[tabIdx - 1])}>
+        <button className={btnGray} onClick={() => { checklistRef.current?.flushAll(); setTab(TABS[tabIdx - 1]) }}>
           <ChevronLeft className="w-4 h-4" /> Anterior
         </button>
-        <button className={btnIndigo} onClick={() => setTab(TABS[tabIdx + 1])}>
+        <button className={btnIndigo} onClick={() => { checklistRef.current?.flushAll(); setTab(TABS[tabIdx + 1]) }}>
           Siguiente <ChevronRight className="w-4 h-4" />
         </button>
       </>
@@ -175,7 +176,7 @@ export default function ModalVisita({ cot, onClose }) {
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}
-      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+      onClick={e => { if (e.target === e.currentTarget) { checklistRef.current?.flushAll(); onClose() } }}
     >
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
 
@@ -199,7 +200,7 @@ export default function ModalVisita({ cot, onClose }) {
             )}
           </div>
           <button
-            onClick={onClose}
+            onClick={() => { checklistRef.current?.flushAll(); onClose() }}
             className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
           >
             <X className="w-5 h-5" />
@@ -249,7 +250,7 @@ export default function ModalVisita({ cot, onClose }) {
 
               {tab === 'Checklist' && (
                 visita
-                  ? <TabChecklist visita={visita} onProductosGuardados={handleProductosGuardados} />
+                  ? <TabChecklist ref={checklistRef} visita={visita} onProductosGuardados={handleProductosGuardados} />
                   : <div className="flex flex-col items-center justify-center h-40 text-slate-400">
                       <ClipboardList className="w-8 h-8 mb-2 text-slate-300" />
                       <p className="text-sm">Primero crea una visita en el tab Datos.</p>
@@ -394,7 +395,7 @@ function TabDatosCrear({
 /* ═══════════════════════════════════════════════
    TAB CHECKLIST
 ══════════════════════════════════════════════ */
-function TabChecklist({ visita, onProductosGuardados }) {
+const TabChecklist = forwardRef(function TabChecklist({ visita, onProductosGuardados }, ref) {
   /* Fix 2: normalizar valores de visita.productos al montar (labels o snake_case) */
   const [productosLocales, setProductosLocales] = useState(() => {
     if (!Array.isArray(visita.productos)) return []
@@ -492,21 +493,30 @@ function TabChecklist({ visita, onProductosGuardados }) {
   function handleChange(pregunta, valor, unidad = 1) {
     const key = `${pregunta.id}_${unidad}`
     setRespuestas(prev => ({ ...prev, [key]: valor }))
-    clearTimeout(timers.current[key])
-    timers.current[key] = setTimeout(() => {
-      supabase.from('visita_checklist').upsert(
-        {
-          visita_id:      visita.id,
-          pregunta_id:    pregunta.id,
-          pregunta_label: pregunta.label,
-          respuesta:      valor,
-          critical:       pregunta.critical,
-          unidad:         unidad,
-        },
-        { onConflict: 'visita_id,pregunta_id,unidad' }
-      )
-    }, 600)
+    clearTimeout(timers.current[key]?.timeoutId)
+    const doUpsert = () => supabase.from('visita_checklist').upsert(
+      {
+        visita_id:      visita.id,
+        pregunta_id:    pregunta.id,
+        pregunta_label: pregunta.label,
+        respuesta:      valor,
+        critical:       pregunta.critical,
+        unidad:         unidad,
+      },
+      { onConflict: 'visita_id,pregunta_id,unidad' }
+    )
+    timers.current[key] = { timeoutId: setTimeout(doUpsert, 600), flush: doUpsert }
   }
+
+  function flushAll() {
+    Object.values(timers.current).forEach(entry => {
+      clearTimeout(entry.timeoutId)
+      entry.flush()
+    })
+    timers.current = {}
+  }
+
+  useImperativeHandle(ref, () => ({ flushAll }))
 
   /* Separar generales / toldo_vela / otros productos */
   const preguntasGenerales = preguntas.filter(q => q.general)
@@ -698,7 +708,7 @@ function TabChecklist({ visita, onProductosGuardados }) {
       )}
     </div>
   )
-}
+})
 
 /* ═══════════════════════════════════════════════
    Fila de pregunta individual
