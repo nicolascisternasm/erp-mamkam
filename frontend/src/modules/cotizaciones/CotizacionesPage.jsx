@@ -229,7 +229,11 @@ export default function CotizacionesPage() {
       <td className="table-td font-mono text-xs text-slate-500">{c.numero}</td>
       <td className="table-td">
         <div className="font-medium text-slate-800">{c.cliente}</div>
-        <div className="text-xs text-slate-400">{c.email}</div>
+        <div className="text-xs text-slate-400">
+          {c.glosa
+            ? (c.glosa.length > 60 ? c.glosa.substring(0, 60) + '...' : c.glosa)
+            : c.email}
+        </div>
       </td>
       <td className="table-td hidden lg:table-cell max-w-[180px]">
         <ProductosChips productos={c.productos_asociados} />
