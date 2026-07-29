@@ -968,6 +968,49 @@ function TabFotos({ visita }) {
   )
 }
 
+/* ── Markdown utilities (usadas en modal y PDF) ──────────────── */
+
+function inlineMd(text) {
+  const parts = text.split(/(\*\*[^*]+\*\*)/)
+  return parts.map((part, i) =>
+    /^\*\*[^*]+\*\*$/.test(part)
+      ? <strong key={i}>{part.slice(2, -2)}</strong>
+      : part
+  )
+}
+
+function parseMarkdown(text) {
+  if (!text) return null
+  return text.split('\n').map((line, i) => {
+    if (/^#{1,3}\s+/.test(line)) {
+      const content = line.replace(/^#{1,3}\s+/, '')
+      return (
+        <div key={i} style={{ fontWeight: 700, color: '#1e3a5f', fontSize: '14px', marginTop: '12px', marginBottom: '4px' }}>
+          {inlineMd(content)}
+        </div>
+      )
+    }
+    if (/^[\*\-]\s+/.test(line)) {
+      const content = line.replace(/^[\*\-]\s+/, '')
+      return (
+        <div key={i} style={{ display: 'flex', gap: '8px', paddingLeft: '8px', marginBottom: '3px' }}>
+          <span style={{ color: '#64748b', flexShrink: 0 }}>•</span>
+          <span>{inlineMd(content)}</span>
+        </div>
+      )
+    }
+    if (line.trim() === '') return <div key={i} style={{ height: '6px' }} />
+    return <p key={i} style={{ margin: '0 0 8px 0', lineHeight: '1.6' }}>{inlineMd(line)}</p>
+  })
+}
+
+const GRUPO_PDF_STYLES = {
+  general:         { label: 'Información General', bg: '#f8fafc', border: '#94a3b8', text: '#475569' },
+  toldo_vela:      { label: 'Toldo Vela',          bg: '#fffbeb', border: '#f59e0b', text: '#92400e' },
+  pasto_sintetico: { label: 'Pasto Sintético',     bg: '#f0fdf4', border: '#15803d', text: '#166534' },
+  caucho_continuo: { label: 'Caucho Continuo',     bg: '#fef2f2', border: '#dc2626', text: '#991b1b' },
+}
+
 /* ═══════════════════════════════════════════════
    TAB RESUMEN IA
 ══════════════════════════════════════════════ */
@@ -979,7 +1022,7 @@ function TabResumenIA({ visita }) {
   const [pdfData,      setPdfData]      = useState(null)
   const pdfRef = useRef(null)
 
-  /* Descarga PDF tras renderizar el div oculto */
+  /* Descarga PDF tras renderizar el div off-screen */
   useEffect(() => {
     if (!pdfData) return
     const el = pdfRef.current
@@ -1012,10 +1055,10 @@ function TabResumenIA({ visita }) {
     setGenerandoPdf(true)
     setError(null)
     try {
-      const [{ data: checklist }, { data: fotos }] = await Promise.all([
+      const [{ data: rawChecklist }, { data: fotos }, { data: preguntas }] = await Promise.all([
         supabase
           .from('visita_checklist')
-          .select('pregunta_label, respuesta, critical, unidad')
+          .select('pregunta_id, pregunta_label, respuesta, critical, unidad')
           .eq('visita_id', visita.id)
           .not('respuesta', 'is', null)
           .neq('respuesta', '')
@@ -1025,31 +1068,43 @@ function TabResumenIA({ visita }) {
           .from('visita_fotos')
           .select('*')
           .eq('visita_id', visita.id)
+          .eq('tipo', 'foto')
           .order('created_at', { ascending: false })
           .limit(6),
+        supabase
+          .from('visita_preguntas')
+          .select('id, producto')
+          .eq('empresa_id', visita.empresa_id),
       ])
-      setPdfData({ checklist: checklist || [], fotos: fotos || [] })
+      const pregProducto = {}
+      ;(preguntas || []).forEach(p => { pregProducto[p.id] = p.producto })
+      const checklist = (rawChecklist || []).map(row => ({
+        ...row,
+        producto: pregProducto[row.pregunta_id] || 'general',
+      }))
+      setPdfData({ checklist, fotos: fotos || [] })
     } catch {
       setError('Error al preparar el PDF')
       setGenerandoPdf(false)
     }
   }
 
-  /* Agrupar checklist por unidad para el div PDF */
-  const checklistPorUnidad = pdfData
+  /* Agrupar checklist por (producto, unidad) para el PDF */
+  const checklistPorGrupo = pdfData
     ? (() => {
         const map = new Map()
         pdfData.checklist.forEach(row => {
-          const u = row.unidad ?? 1
-          if (!map.has(u)) map.set(u, [])
-          map.get(u).push(row)
+          const prod = row.producto || 'general'
+          const key  = prod === 'toldo_vela' ? `toldo_vela_${row.unidad ?? 1}` : prod
+          if (!map.has(key)) map.set(key, { producto: prod, unidad: row.unidad ?? 1, rows: [] })
+          map.get(key).rows.push(row)
         })
-        return Array.from(map, ([u, rows]) => ({ unidad: u, rows }))
+        return Array.from(map.values())
       })()
     : []
 
   const productos = Array.isArray(visita.productos) ? visita.productos.join(', ') : '—'
-  const fechaGen = new Date().toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  const fechaGen  = new Date().toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' })
 
   return (
     <div className="px-6 py-5 space-y-5">
@@ -1111,125 +1166,153 @@ function TabResumenIA({ visita }) {
               </button>
             </div>
           </div>
-          <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">
-            {resumen}
+          {/* Markdown parseado — sin ## ni ** visibles */}
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm text-slate-700 leading-relaxed">
+            {parseMarkdown(resumen)}
           </div>
         </div>
       )}
 
-      {/* ── Div oculto para PDF (off-screen, solo cuando pdfData está listo) ── */}
+      {/* ── Div off-screen para html2canvas (A4 794px, solo cuando pdfData está listo) ── */}
       {pdfData && (
         <div
           ref={pdfRef}
           style={{
             position: 'fixed', top: 0, left: '-9999px',
-            width: '800px', background: '#fff',
-            padding: '40px', fontFamily: 'sans-serif',
+            width: '794px', background: '#ffffff',
+            fontFamily: '"Helvetica Neue", Helvetica, Arial, sans-serif',
             fontSize: '13px', color: '#1e293b', lineHeight: '1.6',
+            boxSizing: 'border-box',
           }}
         >
-          {/* Header */}
-          <div style={{ borderBottom: '2px solid #6366f1', paddingBottom: '16px', marginBottom: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div>
-                <div style={{ fontSize: '22px', fontWeight: 800, color: '#4f46e5', letterSpacing: '-0.5px' }}>MAMKAM</div>
-                <div style={{ fontSize: '16px', fontWeight: 700, color: '#1e293b', marginTop: '4px' }}>Informe de Visita Técnica</div>
-              </div>
-              <div style={{ textAlign: 'right', fontSize: '12px', color: '#64748b' }}>
-                <div>{visita.nombre_proyecto || visita.cliente}</div>
-                <div>Generado: {fechaGen}</div>
-                <div>Estado: {visita.estado}</div>
-              </div>
+          {/* ── Header franja azul oscuro ── */}
+          <div style={{ background: '#1e3a5f', padding: '28px 40px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div>
+              <div style={{ fontSize: '24px', fontWeight: 800, color: '#ffffff', letterSpacing: '-0.5px' }}>MAMKAM</div>
+              <div style={{ fontSize: '13px', fontWeight: 400, color: '#93c5fd', marginTop: '4px' }}>Informe de Visita Técnica</div>
+            </div>
+            <div style={{ textAlign: 'right', fontSize: '12px', color: '#bfdbfe', lineHeight: '1.8' }}>
+              {visita.nombre_proyecto && (
+                <div style={{ fontWeight: 600, color: '#ffffff' }}>{visita.nombre_proyecto}</div>
+              )}
+              <div>Generado: {fechaGen}</div>
+              <div>Estado: <span style={{ fontWeight: 600, color: '#ffffff' }}>{visita.estado}</span></div>
             </div>
           </div>
 
-          {/* Datos */}
-          <section style={{ marginBottom: '24px' }}>
-            <div style={{ fontSize: '12px', fontWeight: 700, color: '#4f46e5', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '10px' }}>
+          {/* ── Body ── */}
+          <div style={{ padding: '32px 40px' }}>
+
+            {/* Sección Datos */}
+            <div style={{ fontSize: '11px', fontWeight: 700, color: '#1e3a5f', textTransform: 'uppercase', letterSpacing: '0.8px', borderBottom: '1px solid #e2e8f0', paddingBottom: '6px', marginBottom: '16px' }}>
               Datos de la Visita
             </div>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <tbody>
-                {[
-                  ['Cliente',         visita.cliente || '—'],
-                  ['Dirección',       visita.direccion || '—'],
-                  ['Comuna',          visita.comuna || '—'],
-                  ['Productos',       productos],
-                  ['Fecha agendada',  visita.fecha_agendada || '—'],
-                  ['Responsable',     visita.responsable_visita || '—'],
-                  ['Instalador',      visita.instalador_nombre || '—'],
-                ].map(([label, value]) => (
-                  <tr key={label} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <td style={{ padding: '5px 8px', color: '#64748b', fontWeight: 600, width: '160px', fontSize: '12px' }}>{label}</td>
-                    <td style={{ padding: '5px 8px', color: '#1e293b', fontSize: '13px' }}>{value}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 32px', marginBottom: '20px' }}>
+              {[
+                ['Cliente',         visita.cliente            || '—'],
+                ['Proyecto',        visita.nombre_proyecto    || '—'],
+                ['Dirección',       visita.direccion          || '—'],
+                ['Comuna',          visita.comuna             || '—'],
+                ['Productos',       productos],
+                ['Fecha agendada',  visita.fecha_agendada     || '—'],
+                ['Responsable',     visita.responsable_visita || '—'],
+                ['Instalador',      visita.instalador_nombre  || '—'],
+              ].map(([label, value]) => (
+                <div key={label}>
+                  <div style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '3px' }}>
+                    {label}
+                  </div>
+                  <div style={{ fontSize: '13px', color: '#1e293b' }}>{value}</div>
+                </div>
+              ))}
+            </div>
             {visita.notas_previas && (
-              <div style={{ marginTop: '10px', padding: '10px', background: '#f8fafc', borderRadius: '6px', fontSize: '12px', color: '#475569' }}>
-                <strong>Notas previas:</strong> {visita.notas_previas}
+              <div style={{ padding: '10px 14px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '12px', color: '#475569', marginBottom: '8px' }}>
+                <span style={{ fontWeight: 700, color: '#1e293b' }}>Notas previas: </span>{visita.notas_previas}
               </div>
             )}
-          </section>
 
-          {/* Checklist */}
-          {pdfData.checklist.length > 0 && (
-            <section style={{ marginBottom: '24px' }}>
-              <div style={{ fontSize: '12px', fontWeight: 700, color: '#4f46e5', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '10px' }}>
-                Checklist ({pdfData.checklist.length} respuestas)
-              </div>
-              {checklistPorUnidad.map(({ unidad, rows }) => (
-                <div key={unidad} style={{ marginBottom: '12px' }}>
-                  {checklistPorUnidad.length > 1 && (
-                    <div style={{ fontSize: '12px', fontWeight: 700, color: '#92400e', background: '#fef3c7', padding: '4px 10px', borderRadius: '4px', marginBottom: '6px' }}>
-                      Toldo {unidad}
-                    </div>
-                  )}
-                  {rows.map((row, i) => (
-                    <div key={i} style={{ display: 'flex', gap: '8px', padding: '5px 0', borderBottom: '1px solid #f8fafc', alignItems: 'flex-start' }}>
-                      <div style={{ color: '#64748b', fontSize: '12px', flex: '0 0 280px' }}>
-                        {row.critical && <span style={{ color: '#b45309', fontWeight: 700 }}>⚠ </span>}
-                        {row.pregunta_label}
+            {/* Sección Checklist */}
+            {pdfData.checklist.length > 0 && (
+              <>
+                <div style={{ borderTop: '1px solid #e2e8f0', margin: '24px 0 16px' }} />
+                <div style={{ fontSize: '11px', fontWeight: 700, color: '#1e3a5f', textTransform: 'uppercase', letterSpacing: '0.8px', borderBottom: '1px solid #e2e8f0', paddingBottom: '6px', marginBottom: '16px' }}>
+                  Checklist ({pdfData.checklist.length} respuestas)
+                </div>
+                {checklistPorGrupo.map(({ producto, unidad, rows }) => {
+                  const gStyle = GRUPO_PDF_STYLES[producto] || GRUPO_PDF_STYLES.general
+                  const gLabel = producto === 'toldo_vela' ? `Toldo ${unidad}` : gStyle.label
+                  return (
+                    <div key={`${producto}_${unidad}`} style={{ marginBottom: '18px' }}>
+                      <div style={{ background: gStyle.bg, borderLeft: `3px solid ${gStyle.border}`, padding: '5px 10px', borderRadius: '0 4px 4px 0', marginBottom: '8px' }}>
+                        <span style={{ fontSize: '11px', fontWeight: 700, color: gStyle.text, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                          {gLabel}
+                        </span>
                       </div>
-                      <div style={{ color: '#1e293b', fontSize: '13px', flex: 1 }}>{row.respuesta}</div>
+                      {rows.map((row, i) => (
+                        <div key={i} style={{
+                          borderLeft: row.critical ? '2px solid #ef4444' : '2px solid #e2e8f0',
+                          paddingLeft: '10px', marginBottom: '8px', paddingBottom: '6px',
+                          borderBottom: i < rows.length - 1 ? '1px solid #f8fafc' : 'none',
+                        }}>
+                          <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            {row.critical && (
+                              <span style={{ fontSize: '10px', fontWeight: 700, color: '#dc2626', background: '#fef2f2', padding: '1px 5px', borderRadius: '3px' }}>
+                                Crítica
+                              </span>
+                            )}
+                            {row.pregunta_label}
+                          </div>
+                          <div style={{ fontSize: '13px', color: '#1e293b', fontWeight: 500 }}>{row.respuesta}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                })}
+              </>
+            )}
+
+            {/* Sección Resumen IA */}
+            {resumen && (
+              <>
+                <div style={{ borderTop: '1px solid #e2e8f0', margin: '24px 0 16px' }} />
+                <div style={{ fontSize: '11px', fontWeight: 700, color: '#1e3a5f', textTransform: 'uppercase', letterSpacing: '0.8px', borderBottom: '1px solid #e2e8f0', paddingBottom: '6px', marginBottom: '16px' }}>
+                  Resumen IA
+                </div>
+                <div style={{ fontSize: '13px', color: '#334155', lineHeight: '1.7' }}>
+                  {parseMarkdown(resumen)}
+                </div>
+              </>
+            )}
+
+            {/* Sección Fotos */}
+            {pdfData.fotos.length > 0 && (
+              <>
+                <div style={{ borderTop: '1px solid #e2e8f0', margin: '24px 0 16px' }} />
+                <div style={{ fontSize: '11px', fontWeight: 700, color: '#1e3a5f', textTransform: 'uppercase', letterSpacing: '0.8px', borderBottom: '1px solid #e2e8f0', paddingBottom: '6px', marginBottom: '16px' }}>
+                  Fotos ({pdfData.fotos.length})
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+                  {pdfData.fotos.map(a => (
+                    <div key={a.id}>
+                      <div style={{ height: '160px', background: '#f8f8f8', borderRadius: '4px', overflow: 'hidden', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <img
+                          src={a.url}
+                          alt={a.nombre_archivo}
+                          crossOrigin="anonymous"
+                          style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                        />
+                      </div>
+                      <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '4px', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {a.nombre_archivo}
+                      </div>
                     </div>
                   ))}
                 </div>
-              ))}
-            </section>
-          )}
+              </>
+            )}
 
-          {/* Resumen IA */}
-          {resumen && (
-            <section style={{ marginBottom: '24px' }}>
-              <div style={{ fontSize: '12px', fontWeight: 700, color: '#4f46e5', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '10px' }}>
-                Resumen IA
-              </div>
-              <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '14px', fontSize: '13px', color: '#334155', lineHeight: '1.7', whiteSpace: 'pre-wrap' }}>
-                {resumen}
-              </div>
-            </section>
-          )}
-
-          {/* Fotos */}
-          {pdfData.fotos.length > 0 && (
-            <section>
-              <div style={{ fontSize: '12px', fontWeight: 700, color: '#4f46e5', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '10px' }}>
-                Fotos / Videos ({pdfData.fotos.length})
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
-                {pdfData.fotos.map(a => (
-                  <div key={a.id} style={{ aspectRatio: '1 / 1', overflow: 'hidden', borderRadius: '6px', background: '#f1f5f9' }}>
-                    {a.tipo === 'foto'
-                      ? <img src={a.url} alt={a.nombre_archivo} crossOrigin="anonymous" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                      : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#1e293b', color: '#fff', fontSize: '11px', fontWeight: 700 }}>VIDEO</div>
-                    }
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
+          </div>
         </div>
       )}
     </div>
