@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { X, CalendarDays, ClipboardList, Image as ImageIcon, Bot, Loader2 } from 'lucide-react'
 import { supabase } from '../../services/supabase'
 import { useAuth } from '../auth/AuthContext'
 import { useApp } from '../../context/AppContext'
+import { buildChecklist } from './visitaChecklists'
 
 const TABS = ['Datos', 'Checklist', 'Fotos', 'Resumen IA']
 const TAB_ICONS = { Datos: CalendarDays, Checklist: ClipboardList, Fotos: ImageIcon, 'Resumen IA': Bot }
@@ -14,21 +15,28 @@ const ESTADO_STYLES = {
   realizada:  'bg-violet-100 text-violet-700',
 }
 
+const GRUPO_STYLES = {
+  General:          { header: 'bg-slate-100 text-slate-600',   dot: 'bg-slate-400' },
+  'Toldo Vela':     { header: 'bg-amber-50 text-amber-800',    dot: 'bg-amber-400' },
+  'Pasto Sintético':{ header: 'bg-emerald-50 text-emerald-800',dot: 'bg-emerald-500' },
+  'Caucho Continuo':{ header: 'bg-red-50 text-red-800',        dot: 'bg-red-500' },
+}
+
 export default function ModalVisita({ cot, onClose }) {
   const { user }         = useAuth()
   const { trabajadores } = useApp()
 
-  const [tab,     setTab]     = useState('Datos')
-  const [visita,  setVisita]  = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [tab,      setTab]      = useState('Datos')
+  const [visita,   setVisita]   = useState(null)
+  const [loading,  setLoading]  = useState(true)
   const [guardando, setGuardando] = useState(false)
 
   /* form state */
-  const [fechaAgendada,      setFechaAgendada]      = useState('')
-  const [responsable,        setResponsable]        = useState(user?.nombre || '')
-  const [instalador,         setInstalador]         = useState('')
-  const [notasPrevias,       setNotasPrevias]       = useState('')
-  const [productosChecked,   setProductosChecked]   = useState([])
+  const [fechaAgendada,    setFechaAgendada]    = useState('')
+  const [responsable,      setResponsable]      = useState(user?.nombre || '')
+  const [instalador,       setInstalador]       = useState('')
+  const [notasPrevias,     setNotasPrevias]     = useState('')
+  const [productosChecked, setProductosChecked] = useState([])
 
   const trabajadoresActivos = (trabajadores || []).filter(t => t.estado === 'activo')
 
@@ -57,22 +65,22 @@ export default function ModalVisita({ cot, onClose }) {
     const { data, error } = await supabase
       .from('visitas')
       .insert({
-        cotizacion_id:     cot.id,
-        empresa_id:        user?.empresa_id,
-        cliente:           cot.cliente,
-        telefono_cliente:  cot.telefono  || null,
-        email_cliente:     cot.email     || null,
-        direccion:         cot.direccion || null,
-        comuna:            cot.comuna    || null,
-        nombre_proyecto:   cot.glosa     || null,
-        productos:         productosChecked,
-        fecha_agendada:    fechaAgendada || null,
-        responsable_visita: responsable  || null,
-        instalador_nombre: instalador    || null,
-        notas_previas:     notasPrevias  || null,
-        vendedor_id:       user?.id,
-        vendedor_nombre:   user?.nombre  || null,
-        estado:            'agendada',
+        cotizacion_id:      cot.id,
+        empresa_id:         user?.empresa_id,
+        cliente:            cot.cliente,
+        telefono_cliente:   cot.telefono  || null,
+        email_cliente:      cot.email     || null,
+        direccion:          cot.direccion || null,
+        comuna:             cot.comuna    || null,
+        nombre_proyecto:    cot.glosa     || null,
+        productos:          productosChecked,
+        fecha_agendada:     fechaAgendada || null,
+        responsable_visita: responsable   || null,
+        instalador_nombre:  instalador    || null,
+        notas_previas:      notasPrevias  || null,
+        vendedor_id:        user?.id,
+        vendedor_nombre:    user?.nombre  || null,
+        estado:             'agendada',
       })
       .select()
       .single()
@@ -145,21 +153,33 @@ export default function ModalVisita({ cot, onClose }) {
             <>
               {/* TAB DATOS */}
               {tab === 'Datos' && (
-                visita ? <TabDatosLectura visita={visita} /> : <TabDatosCrear
-                  fechaAgendada={fechaAgendada}       setFechaAgendada={setFechaAgendada}
-                  responsable={responsable}           setResponsable={setResponsable}
-                  instalador={instalador}             setInstalador={setInstalador}
-                  notasPrevias={notasPrevias}         setNotasPrevias={setNotasPrevias}
-                  productosChecked={productosChecked} toggleProducto={toggleProducto}
-                  trabajadores={trabajadoresActivos}
-                  onCancelar={onClose}
-                  onCrear={handleCrear}
-                  guardando={guardando}
-                />
+                visita
+                  ? <TabDatosLectura visita={visita} />
+                  : <TabDatosCrear
+                      fechaAgendada={fechaAgendada}       setFechaAgendada={setFechaAgendada}
+                      responsable={responsable}           setResponsable={setResponsable}
+                      instalador={instalador}             setInstalador={setInstalador}
+                      notasPrevias={notasPrevias}         setNotasPrevias={setNotasPrevias}
+                      productosChecked={productosChecked} toggleProducto={toggleProducto}
+                      trabajadores={trabajadoresActivos}
+                      onCancelar={onClose}
+                      onCrear={handleCrear}
+                      guardando={guardando}
+                    />
               )}
 
-              {/* OTRAS TABS */}
-              {tab !== 'Datos' && (
+              {/* TAB CHECKLIST */}
+              {tab === 'Checklist' && (
+                visita
+                  ? <TabChecklist visita={visita} />
+                  : <div className="flex flex-col items-center justify-center h-40 text-slate-400">
+                      <ClipboardList className="w-8 h-8 mb-2 text-slate-300" />
+                      <p className="text-sm">Primero crea una visita en el tab Datos.</p>
+                    </div>
+              )}
+
+              {/* TABS PENDIENTES */}
+              {(tab === 'Fotos' || tab === 'Resumen IA') && (
                 <div className="flex flex-col items-center justify-center h-40 text-slate-400 py-12">
                   {(() => { const Icon = TAB_ICONS[tab]; return <Icon className="w-8 h-8 mb-3 text-slate-300" /> })()}
                   <p className="text-sm">Próximamente...</p>
@@ -173,20 +193,22 @@ export default function ModalVisita({ cot, onClose }) {
   )
 }
 
-/* ── Sub-componente: datos en modo lectura ── */
+/* ─────────────────────────────────────────────
+   TAB DATOS — modo lectura
+───────────────────────────────────────────── */
 function TabDatosLectura({ visita }) {
   return (
     <div className="px-6 py-5 space-y-1 max-w-2xl">
-      <Row label="Estado"            value={visita.estado} />
-      <Row label="Cliente"           value={visita.cliente} />
-      <Row label="Dirección"         value={visita.direccion ?? '—'} />
-      <Row label="Comuna"            value={visita.comuna ?? '—'} />
-      <Row label="Teléfono"          value={visita.telefono_cliente ?? '—'} />
-      <Row label="Proyecto"          value={visita.nombre_proyecto ?? '—'} />
-      <Row label="Fecha agendada"    value={visita.fecha_agendada ?? '—'} />
-      <Row label="Responsable"       value={visita.responsable_visita ?? '—'} />
-      <Row label="Instalador"        value={visita.instalador_nombre ?? '—'} />
-      <Row label="Productos"         value={Array.isArray(visita.productos) && visita.productos.length ? visita.productos.join(', ') : '—'} />
+      <Row label="Estado"         value={visita.estado} />
+      <Row label="Cliente"        value={visita.cliente} />
+      <Row label="Dirección"      value={visita.direccion ?? '—'} />
+      <Row label="Comuna"         value={visita.comuna ?? '—'} />
+      <Row label="Teléfono"       value={visita.telefono_cliente ?? '—'} />
+      <Row label="Proyecto"       value={visita.nombre_proyecto ?? '—'} />
+      <Row label="Fecha agendada" value={visita.fecha_agendada ?? '—'} />
+      <Row label="Responsable"    value={visita.responsable_visita ?? '—'} />
+      <Row label="Instalador"     value={visita.instalador_nombre ?? '—'} />
+      <Row label="Productos"      value={Array.isArray(visita.productos) && visita.productos.length ? visita.productos.join(', ') : '—'} />
       {visita.notas_previas && (
         <div className="pt-3">
           <p className="text-xs font-medium text-slate-400 mb-1">Notas previas</p>
@@ -197,16 +219,9 @@ function TabDatosLectura({ visita }) {
   )
 }
 
-function Row({ label, value }) {
-  return (
-    <div className="flex items-start gap-3 py-2 border-b border-slate-50 last:border-0">
-      <span className="text-slate-400 text-xs font-medium min-w-[150px] shrink-0 mt-0.5">{label}</span>
-      <span className="text-slate-800 text-sm">{value}</span>
-    </div>
-  )
-}
-
-/* ── Sub-componente: formulario de creación ── */
+/* ─────────────────────────────────────────────
+   TAB DATOS — formulario de creación
+───────────────────────────────────────────── */
 function TabDatosCrear({
   fechaAgendada, setFechaAgendada,
   responsable, setResponsable,
@@ -219,7 +234,6 @@ function TabDatosCrear({
   return (
     <div className="flex flex-col h-full">
       <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
-        {/* Fecha agendada */}
         <Field label="Fecha agendada">
           <input
             type="date"
@@ -229,7 +243,6 @@ function TabDatosCrear({
           />
         </Field>
 
-        {/* Responsable */}
         <Field label="Responsable de visita">
           <input
             type="text"
@@ -240,7 +253,6 @@ function TabDatosCrear({
           />
         </Field>
 
-        {/* Instalador */}
         <Field label="Instalador">
           <select
             value={instalador}
@@ -254,7 +266,6 @@ function TabDatosCrear({
           </select>
         </Field>
 
-        {/* Productos */}
         <Field label="Productos">
           <div className="flex flex-col gap-2">
             {PRODUCTOS_OPCIONES.map(p => (
@@ -271,7 +282,6 @@ function TabDatosCrear({
           </div>
         </Field>
 
-        {/* Notas previas */}
         <Field label="Notas previas">
           <textarea
             value={notasPrevias}
@@ -283,7 +293,6 @@ function TabDatosCrear({
         </Field>
       </div>
 
-      {/* Footer */}
       <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-100 shrink-0 bg-slate-50/70">
         <button
           onClick={onCancelar}
@@ -300,6 +309,156 @@ function TabDatosCrear({
           Crear visita
         </button>
       </div>
+    </div>
+  )
+}
+
+/* ─────────────────────────────────────────────
+   TAB CHECKLIST
+───────────────────────────────────────────── */
+function TabChecklist({ visita }) {
+  const [respuestas, setRespuestas] = useState({})
+  const [loadingCL,  setLoadingCL]  = useState(true)
+  const timers = useRef({})
+
+  const preguntas   = buildChecklist(visita.productos || [])
+  const respondidas = preguntas.filter(q => (respuestas[q.id] || '').trim() !== '').length
+  const pct         = preguntas.length > 0 ? Math.round((respondidas / preguntas.length) * 100) : 0
+
+  useEffect(() => {
+    async function load() {
+      setLoadingCL(true)
+      const { data } = await supabase
+        .from('visita_checklist')
+        .select('*')
+        .eq('visita_id', visita.id)
+      if (data) {
+        const map = {}
+        data.forEach(row => { map[row.pregunta_id] = row.respuesta })
+        setRespuestas(map)
+      }
+      setLoadingCL(false)
+    }
+    void load()
+  }, [visita.id])
+
+  function handleChange(pregunta, valor) {
+    setRespuestas(prev => ({ ...prev, [pregunta.id]: valor }))
+    clearTimeout(timers.current[pregunta.id])
+    timers.current[pregunta.id] = setTimeout(() => {
+      supabase.from('visita_checklist').upsert(
+        {
+          visita_id:      visita.id,
+          pregunta_id:    pregunta.id,
+          pregunta_label: pregunta.label,
+          respuesta:      valor,
+          critical:       pregunta.critical,
+        },
+        { onConflict: 'visita_id,pregunta_id' }
+      )
+    }, 600)
+  }
+
+  /* Agrupar preguntas */
+  const grupos = preguntas.reduce((acc, q) => {
+    const key = q.general ? 'General' : (q.product || 'General')
+    const last = acc[acc.length - 1]
+    if (last && last.key === key) {
+      last.preguntas.push(q)
+    } else {
+      acc.push({ key, preguntas: [q] })
+    }
+    return acc
+  }, [])
+
+  if (loadingCL) {
+    return (
+      <div className="flex items-center justify-center h-40">
+        <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="px-6 py-5 space-y-6">
+      {/* Barra de progreso */}
+      <div>
+        <div className="flex justify-between text-xs text-slate-500 mb-1.5">
+          <span>{respondidas} de {preguntas.length} preguntas respondidas</span>
+          <span className="font-semibold text-slate-700">{pct}%</span>
+        </div>
+        <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+          <div
+            className="h-2 rounded-full transition-all duration-500"
+            style={{
+              width: `${pct}%`,
+              background: pct === 100 ? '#10b981' : '#6366f1',
+            }}
+          />
+        </div>
+      </div>
+
+      {/* Grupos de preguntas */}
+      {grupos.map(grupo => {
+        const style = GRUPO_STYLES[grupo.key] || GRUPO_STYLES['General']
+        return (
+          <div key={grupo.key}>
+            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg mb-3 ${style.header}`}>
+              <span className={`w-2 h-2 rounded-full shrink-0 ${style.dot}`} />
+              <span className="text-xs font-bold tracking-wide uppercase">{grupo.key}</span>
+            </div>
+            <div className="space-y-2.5">
+              {grupo.preguntas.map(q => (
+                <PreguntaRow
+                  key={q.id}
+                  pregunta={q}
+                  valor={respuestas[q.id] || ''}
+                  onChange={handleChange}
+                />
+              ))}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+/* ─────────────────────────────────────────────
+   Fila de pregunta individual
+───────────────────────────────────────────── */
+function PreguntaRow({ pregunta, valor, onChange }) {
+  return (
+    <div className={`rounded-xl p-3 border ${pregunta.critical ? 'bg-amber-50 border-amber-100' : 'bg-slate-50 border-slate-100'}`}>
+      <div className="flex items-start gap-2 mb-2">
+        <p className={`text-sm flex-1 leading-snug ${pregunta.critical ? 'font-semibold text-slate-800' : 'font-medium text-slate-700'}`}>
+          {pregunta.label}
+        </p>
+        {pregunta.critical && (
+          <span className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs font-bold bg-amber-100 text-amber-700 whitespace-nowrap">
+            ⚠ Crítica
+          </span>
+        )}
+      </div>
+      <input
+        type={pregunta.kind === 'date' ? 'date' : 'text'}
+        value={valor}
+        onChange={e => onChange(pregunta, e.target.value)}
+        placeholder={pregunta.kind === 'date' ? '' : 'Respuesta...'}
+        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+      />
+    </div>
+  )
+}
+
+/* ─────────────────────────────────────────────
+   Helpers
+───────────────────────────────────────────── */
+function Row({ label, value }) {
+  return (
+    <div className="flex items-start gap-3 py-2 border-b border-slate-50 last:border-0">
+      <span className="text-slate-400 text-xs font-medium min-w-[150px] shrink-0 mt-0.5">{label}</span>
+      <span className="text-slate-800 text-sm">{value}</span>
     </div>
   )
 }
