@@ -60,6 +60,13 @@ export const PREGUNTAS_PASTO_SINTETICO = mk([
   { q: '¿Hay algo adicional que el cliente haya solicitado o comentado?' },
 ])
 
+const SNAKE_TO_LABEL = {
+  'toldo_vela':       'Toldo Vela',
+  'pasto_sintetico':  'Pasto Sintético',
+  'caucho_continuo':  'Caucho Continuo',
+  'multiple':         'Multiple',
+}
+
 const PRODUCT_MAP = {
   'Toldo Vela':       PREGUNTAS_TOLDO_VELA,
   'Pasto Sintético':  PREGUNTAS_PASTO_SINTETICO,
@@ -72,10 +79,11 @@ export function buildChecklist(productos) {
   if (unique.length === 0) return general
   const out = [...general]
   unique.forEach(p => {
-    const preguntas = PRODUCT_MAP[p]
+    const label = SNAKE_TO_LABEL[p] || p
+    const preguntas = PRODUCT_MAP[label]
     if (!preguntas) return
     preguntas.forEach(q => {
-      out.push({ ...q, id: `${p}-${q.id}`, product: p })
+      out.push({ ...q, id: `${label}-${q.id}`, product: label })
     })
   })
   return out
