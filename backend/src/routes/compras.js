@@ -15,6 +15,9 @@ function createTransporter() {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS,
     },
+    connectionTimeout: 10000,
+    greetingTimeout:   10000,
+    socketTimeout:     10000,
   })
 }
 
@@ -270,14 +273,21 @@ router.post('/:id/enviar-email', requireAuth, requireRole('admin'), async (req, 
   console.log('[enviar-email] enviando con nodemailer...')
   try {
     const transporter = createTransporter()
-    await transporter.sendMail({
+    const mailOptions = {
       from:    `"MAMKAM" <${process.env.SMTP_USER}>`,
       to:      proveedorEmail,
       cc:      'contacto@mamkam.cl',
       subject: `Orden de Compra ${oc.numero} - MAMKAM`,
       html:    buildEmailHTML(oc),
       attachments,
-    })
+    }
+    await Promise.race([
+      transporter.sendMail(mailOptions),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('SMTP timeout después de 10s')), 10000)
+      ),
+    ])
+    console.log('[enviar-email] email enviado OK')
   } catch (mailErr) {
     return res.status(500).json({ ok: false, error: `Error al enviar email: ${mailErr.message}` })
   }
