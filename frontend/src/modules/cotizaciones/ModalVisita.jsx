@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react'
-import { X, CalendarDays, ClipboardList, Image as ImageIcon, Bot, Loader2, ChevronRight, ChevronLeft, Check, ChevronDown, Upload, Trash2 } from 'lucide-react'
+import { X, CalendarDays, ClipboardList, Image as ImageIcon, Bot, Loader2, ChevronRight, ChevronLeft, Check, ChevronDown, Upload, Trash2, Download } from 'lucide-react'
 import { supabase } from '../../services/supabase'
 import { useAuth } from '../auth/AuthContext'
 import { useApp } from '../../context/AppContext'
+import { apiClient } from '../../services/apiClient'
+import { downloadPDF } from '../../utils/pdf'
 
 const TABS = ['Datos', 'Checklist', 'Fotos', 'Resumen IA']
 const TAB_ICONS = { Datos: CalendarDays, Checklist: ClipboardList, Fotos: ImageIcon, 'Resumen IA': Bot }
@@ -267,10 +269,12 @@ export default function ModalVisita({ cot, onClose }) {
               )}
 
               {tab === 'Resumen IA' && (
-                <div className="flex flex-col items-center justify-center h-40 text-slate-400 py-12">
-                  <Bot className="w-8 h-8 mb-3 text-slate-300" />
-                  <p className="text-sm">Próximamente...</p>
-                </div>
+                visita
+                  ? <TabResumenIA visita={visita} />
+                  : <div className="flex flex-col items-center justify-center h-40 text-slate-400">
+                      <Bot className="w-8 h-8 mb-2 text-slate-300" />
+                      <p className="text-sm">Primero crea una visita en el tab Datos.</p>
+                    </div>
               )}
             </>
           )}
@@ -504,10 +508,7 @@ const TabChecklist = forwardRef(function TabChecklist({ visita, onProductosGuard
         unidad:         unidad,
       },
       { onConflict: 'visita_id,pregunta_id,unidad' }
-    ).then(({ data, error }) => {
-      if (error) console.error('[checklist upsert] ERROR:', error)
-      else console.log('[checklist upsert] OK:', data)
-    })
+    )
     timers.current[key] = { timeoutId: setTimeout(doUpsert, 600), flush: doUpsert }
   }
 
@@ -961,6 +962,274 @@ function TabFotos({ visita }) {
             className="max-w-[90vw] max-h-[90vh] object-contain rounded-xl shadow-2xl"
             onClick={e => e.stopPropagation()}
           />
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ═══════════════════════════════════════════════
+   TAB RESUMEN IA
+══════════════════════════════════════════════ */
+function TabResumenIA({ visita }) {
+  const [resumen,      setResumen]      = useState(visita.resumen_ia || '')
+  const [generando,    setGenerando]    = useState(false)
+  const [generandoPdf, setGenerandoPdf] = useState(false)
+  const [error,        setError]        = useState(null)
+  const [pdfData,      setPdfData]      = useState(null)
+  const pdfRef = useRef(null)
+
+  /* Descarga PDF tras renderizar el div oculto */
+  useEffect(() => {
+    if (!pdfData) return
+    const el = pdfRef.current
+    if (!el) return
+    let cancelled = false
+    downloadPDF(el, `Informe_Visita_${visita.id}.pdf`)
+      .finally(() => {
+        if (!cancelled) {
+          setPdfData(null)
+          setGenerandoPdf(false)
+        }
+      })
+    return () => { cancelled = true }
+  }, [pdfData, visita.id])
+
+  async function handleGenerar() {
+    setGenerando(true)
+    setError(null)
+    try {
+      const { resumen: texto } = await apiClient.post(`/visitas/${visita.id}/resumen-ia`)
+      setResumen(texto)
+    } catch (err) {
+      setError(err.message || 'Error al generar el resumen')
+    } finally {
+      setGenerando(false)
+    }
+  }
+
+  async function handleDescargarPdf() {
+    setGenerandoPdf(true)
+    setError(null)
+    try {
+      const [{ data: checklist }, { data: fotos }] = await Promise.all([
+        supabase
+          .from('visita_checklist')
+          .select('pregunta_label, respuesta, critical, unidad')
+          .eq('visita_id', visita.id)
+          .not('respuesta', 'is', null)
+          .neq('respuesta', '')
+          .order('unidad')
+          .order('created_at'),
+        supabase
+          .from('visita_fotos')
+          .select('*')
+          .eq('visita_id', visita.id)
+          .order('created_at', { ascending: false })
+          .limit(6),
+      ])
+      setPdfData({ checklist: checklist || [], fotos: fotos || [] })
+    } catch {
+      setError('Error al preparar el PDF')
+      setGenerandoPdf(false)
+    }
+  }
+
+  /* Agrupar checklist por unidad para el div PDF */
+  const checklistPorUnidad = pdfData
+    ? (() => {
+        const map = new Map()
+        pdfData.checklist.forEach(row => {
+          const u = row.unidad ?? 1
+          if (!map.has(u)) map.set(u, [])
+          map.get(u).push(row)
+        })
+        return Array.from(map, ([u, rows]) => ({ unidad: u, rows }))
+      })()
+    : []
+
+  const productos = Array.isArray(visita.productos) ? visita.productos.join(', ') : '—'
+  const fechaGen = new Date().toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' })
+
+  return (
+    <div className="px-6 py-5 space-y-5">
+
+      {/* ── Error ── */}
+      {error && (
+        <div className="px-3 py-2.5 rounded-lg bg-red-50 border border-red-100 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
+      {/* ── Estado vacío ── */}
+      {!resumen && !generando && (
+        <div className="flex flex-col items-center justify-center py-12 gap-4">
+          <Bot className="w-10 h-10 text-slate-300" />
+          <p className="text-sm text-slate-500 text-center max-w-xs">
+            Genera un resumen ejecutivo de la visita usando inteligencia artificial.
+          </p>
+          <button
+            onClick={handleGenerar}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 transition-colors"
+          >
+            <Bot className="w-4 h-4" />
+            Generar resumen con IA
+          </button>
+        </div>
+      )}
+
+      {/* ── Generando ── */}
+      {generando && (
+        <div className="flex flex-col items-center justify-center py-12 gap-3">
+          <Loader2 className="w-7 h-7 animate-spin text-indigo-500" />
+          <p className="text-sm text-slate-500">Analizando información de la visita...</p>
+        </div>
+      )}
+
+      {/* ── Resumen listo ── */}
+      {resumen && !generando && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Resumen generado por IA</p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleGenerar}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
+              >
+                <Bot className="w-3.5 h-3.5" />
+                Regenerar
+              </button>
+              <button
+                onClick={handleDescargarPdf}
+                disabled={generandoPdf}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 transition-colors"
+              >
+                {generandoPdf
+                  ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  : <Download className="w-3.5 h-3.5" />}
+                {generandoPdf ? 'Preparando...' : 'Descargar PDF'}
+              </button>
+            </div>
+          </div>
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">
+            {resumen}
+          </div>
+        </div>
+      )}
+
+      {/* ── Div oculto para PDF (off-screen, solo cuando pdfData está listo) ── */}
+      {pdfData && (
+        <div
+          ref={pdfRef}
+          style={{
+            position: 'fixed', top: 0, left: '-9999px',
+            width: '800px', background: '#fff',
+            padding: '40px', fontFamily: 'sans-serif',
+            fontSize: '13px', color: '#1e293b', lineHeight: '1.6',
+          }}
+        >
+          {/* Header */}
+          <div style={{ borderBottom: '2px solid #6366f1', paddingBottom: '16px', marginBottom: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div>
+                <div style={{ fontSize: '22px', fontWeight: 800, color: '#4f46e5', letterSpacing: '-0.5px' }}>MAMKAM</div>
+                <div style={{ fontSize: '16px', fontWeight: 700, color: '#1e293b', marginTop: '4px' }}>Informe de Visita Técnica</div>
+              </div>
+              <div style={{ textAlign: 'right', fontSize: '12px', color: '#64748b' }}>
+                <div>{visita.nombre_proyecto || visita.cliente}</div>
+                <div>Generado: {fechaGen}</div>
+                <div>Estado: {visita.estado}</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Datos */}
+          <section style={{ marginBottom: '24px' }}>
+            <div style={{ fontSize: '12px', fontWeight: 700, color: '#4f46e5', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '10px' }}>
+              Datos de la Visita
+            </div>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <tbody>
+                {[
+                  ['Cliente',         visita.cliente || '—'],
+                  ['Dirección',       visita.direccion || '—'],
+                  ['Comuna',          visita.comuna || '—'],
+                  ['Productos',       productos],
+                  ['Fecha agendada',  visita.fecha_agendada || '—'],
+                  ['Responsable',     visita.responsable_visita || '—'],
+                  ['Instalador',      visita.instalador_nombre || '—'],
+                ].map(([label, value]) => (
+                  <tr key={label} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <td style={{ padding: '5px 8px', color: '#64748b', fontWeight: 600, width: '160px', fontSize: '12px' }}>{label}</td>
+                    <td style={{ padding: '5px 8px', color: '#1e293b', fontSize: '13px' }}>{value}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {visita.notas_previas && (
+              <div style={{ marginTop: '10px', padding: '10px', background: '#f8fafc', borderRadius: '6px', fontSize: '12px', color: '#475569' }}>
+                <strong>Notas previas:</strong> {visita.notas_previas}
+              </div>
+            )}
+          </section>
+
+          {/* Checklist */}
+          {pdfData.checklist.length > 0 && (
+            <section style={{ marginBottom: '24px' }}>
+              <div style={{ fontSize: '12px', fontWeight: 700, color: '#4f46e5', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '10px' }}>
+                Checklist ({pdfData.checklist.length} respuestas)
+              </div>
+              {checklistPorUnidad.map(({ unidad, rows }) => (
+                <div key={unidad} style={{ marginBottom: '12px' }}>
+                  {checklistPorUnidad.length > 1 && (
+                    <div style={{ fontSize: '12px', fontWeight: 700, color: '#92400e', background: '#fef3c7', padding: '4px 10px', borderRadius: '4px', marginBottom: '6px' }}>
+                      Toldo {unidad}
+                    </div>
+                  )}
+                  {rows.map((row, i) => (
+                    <div key={i} style={{ display: 'flex', gap: '8px', padding: '5px 0', borderBottom: '1px solid #f8fafc', alignItems: 'flex-start' }}>
+                      <div style={{ color: '#64748b', fontSize: '12px', flex: '0 0 280px' }}>
+                        {row.critical && <span style={{ color: '#b45309', fontWeight: 700 }}>⚠ </span>}
+                        {row.pregunta_label}
+                      </div>
+                      <div style={{ color: '#1e293b', fontSize: '13px', flex: 1 }}>{row.respuesta}</div>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </section>
+          )}
+
+          {/* Resumen IA */}
+          {resumen && (
+            <section style={{ marginBottom: '24px' }}>
+              <div style={{ fontSize: '12px', fontWeight: 700, color: '#4f46e5', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '10px' }}>
+                Resumen IA
+              </div>
+              <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '14px', fontSize: '13px', color: '#334155', lineHeight: '1.7', whiteSpace: 'pre-wrap' }}>
+                {resumen}
+              </div>
+            </section>
+          )}
+
+          {/* Fotos */}
+          {pdfData.fotos.length > 0 && (
+            <section>
+              <div style={{ fontSize: '12px', fontWeight: 700, color: '#4f46e5', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '10px' }}>
+                Fotos / Videos ({pdfData.fotos.length})
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                {pdfData.fotos.map(a => (
+                  <div key={a.id} style={{ aspectRatio: '1 / 1', overflow: 'hidden', borderRadius: '6px', background: '#f1f5f9' }}>
+                    {a.tipo === 'foto'
+                      ? <img src={a.url} alt={a.nombre_archivo} crossOrigin="anonymous" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#1e293b', color: '#fff', fontSize: '11px', fontWeight: 700 }}>VIDEO</div>
+                    }
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
         </div>
       )}
     </div>

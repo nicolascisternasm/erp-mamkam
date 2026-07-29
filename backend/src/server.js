@@ -31,6 +31,7 @@ const movContablesRoutes     = require('./routes/movimientosContables')
 const amonestacionesRoutes   = require('./routes/amonestaciones.js')
 const crmRoutes              = require('./routes/crm.js')
 const integracionesRoutes    = require('./routes/integraciones.js')
+const visitasRoutes          = require('./routes/visitas.js')
 const { requireAuth }        = require('./middleware/auth.js')
 
 const app = express()
@@ -70,6 +71,7 @@ app.use('/api/movimientos-contables', movContablesRoutes)
 app.use('/api/amonestaciones',        amonestacionesRoutes)
 app.use('/api/crm',                   crmRoutes)
 app.use('/api/integraciones',         requireAuth, integracionesRoutes)
+app.use('/api/visitas',               visitasRoutes)
 
 app.use((req, res, next) => {
   res.status(404).json({ error: `Ruta no encontrada: ${req.method} ${req.path}` })
