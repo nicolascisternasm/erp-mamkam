@@ -1,6 +1,6 @@
 # DOCUMENTO MAESTRO — ERP MAMKAM
-**Versión:** 1.7.0  
-**Fecha:** 2026-07-25  
+**Versión:** 1.8.0  
+**Fecha:** 2026-07-29  
 **Estado:** Documento Vivo — sujeto a revisiones controladas  
 **Clasificación:** Interno / Confidencial
 
@@ -48,6 +48,7 @@ ERP MAMKAM es una plataforma empresarial modular de gestión integral diseñada 
 ```
 ERP MAMKAM
 ├── COT  — Cotizaciones
+│   └── VIS  — Visitas a terreno
 ├── OC   — Órdenes de Compra
 ├── RH   — Recursos Humanos
 ├── TRB  — Trabajadores
@@ -83,7 +84,7 @@ ERP MAMKAM
 
 ## 2. ESTADO DE IMPLEMENTACIÓN
 
-> Esta sección refleja el estado real del código al **2026-07-23**. Los módulos marcados como ✅ están operativos. Los marcados como ⚠️ están parcialmente implementados. Los marcados como 🔲 son especificaciones planificadas aún no desarrolladas.
+> Esta sección refleja el estado real del código al **2026-07-29**. Los módulos marcados como ✅ están operativos. Los marcados como ⚠️ están parcialmente implementados. Los marcados como 🔲 son especificaciones planificadas aún no desarrolladas.
 
 ### 2.1 Estado por Módulo
 
@@ -91,6 +92,7 @@ ERP MAMKAM
 |--------|--------|-------------|
 | **Autenticación** | ✅ Operativo | Login JWT, roles admin/vendedor, rutas protegidas |
 | **COT — Cotizaciones** | ✅ Operativo | CRUD completo, envío WA/email, PDF, estados, items |
+| **VIS — Visitas** | ⚠️ Parcial | Modal overlay desde cotización aprobada, checklist desde Supabase, pendiente RLS |
 | **OC — Órdenes de Compra** | ✅ Operativo | CRUD básico, items, solo rol admin |
 | **TRB — Trabajadores** | ✅ Operativo | CRUD completo, datos personales y laborales |
 | **RRHH** | ✅ Operativo | Documentos empresa/trabajador, gestión de tipos, amonestaciones con IA |
@@ -98,7 +100,7 @@ ERP MAMKAM
 | **Backend Railway** | ✅ Operativo | Backend migrado de cPanel a Railway, deploy automático desde GitHub |
 | **FIN — Finanzas** | ⚠️ Parcial | Movimientos, conciliación manual, importación CSV, gastos con foto |
 | **Usuarios** | ⚠️ Parcial | Página existente, gestión básica |
-| **Configuración** | ⚠️ Parcial | Página existente, ajustes generales |
+| **Configuración** | ⚠️ Parcial | Página existente, ajustes generales, tab Visitas (admin) para gestionar checklist |
 | **IAD — IA Documental** | 🔲 Planificado | Solo en especificación técnica |
 | **CONT — Contabilidad** | 🔲 Planificado | Solo en especificación técnica |
 | **FIN.SII** | 🔲 Planificado | Integración SII en especificación técnica |
@@ -124,13 +126,26 @@ ERP MAMKAM
 #### Cotizaciones (COT) ✅
 - Creación con items (producto, cantidad, valor unitario, descripción)
 - Numeración automática (COT-YYYY-NNNN)
-- Estados: `borrador` → `enviada` → `aprobada` / `rechazada`
+- Estados: `borrador` → `enviada` → `aprobada` / `rechazada` / `en_ejecucion` / `cerrada`
 - Envío por **WhatsApp** (link público con datos en URL en base64, sin BD)
 - Envío por **email** vía EmailJS
 - Página pública `/ver?d=...` para que el cliente vea su cotización
 - Generación de **PDF** visual desde el detalle
 - Al aprobar cotización → crea movimiento de ingreso en Finanzas automáticamente
 - Al eliminar cotización aprobada → elimina movimiento de finanzas asociado
+- **Botón flotante "Visita"** visible cuando estado es `aprobada`, `en_ejecucion` o `cerrada` → abre ModalVisita
+
+#### Visitas (VIS) ⚠️ Parcial
+- **ModalVisita.jsx**: modal overlay (max-w-4xl, max-h-[90vh], fondo con blur) accesible desde `CotizacionDetalle.jsx`
+- 4 tabs: **Datos** | **Checklist** | **Fotos** | **Resumen IA**
+- **Tab Datos**: formulario de creación de visita (fecha, responsable, instalador, productos, notas); inserta en tabla `visitas`
+- **Tab Checklist**: preguntas cargadas desde Supabase (`visita_preguntas`), filtradas por empresa y productos; respuestas guardadas con UPSERT debounced (600ms) en `visita_checklist`; selector inline de productos si la visita no tiene productos asignados
+- Navegación footer adaptativa por tab (Cancelar/Crear, Siguiente, ←/→, ←/Cerrar)
+- Tras crear visita, navega automáticamente al tab Checklist
+- **visitaChecklists.js**: archivo JS con preguntas hardcodeadas (usado como referencia; la fuente oficial es ahora Supabase)
+- **Tab Configuración → Visitas** (solo admin): gestión de preguntas del checklist agrupadas por producto, con CRUD inline, toggle crítica y soft delete (`activo = false`)
+- **seed SQL**: `backend/scripts/seed-visita-preguntas.sql` con 41 preguntas (2 general + 12 toldo_vela + 13 caucho_continuo + 14 pasto_sintetico)
+- **Pendiente**: fix RLS en tabla `visita_preguntas` (ver sección 8.3.2)
 
 #### Órdenes de Compra (OC) ✅
 - CRUD básico (solo rol admin)
@@ -661,6 +676,72 @@ DOCUMENTO ENTRANTE
 
 ---
 
+### 4.8 MÓDULO VIS — Visitas a Terreno ⚠️ Parcial
+
+**Propósito:** Registrar y gestionar visitas de técnicos/instaladores a terreno desde una cotización aprobada. Incluye checklist de preguntas por producto, fotos del lugar y resumen IA.
+
+#### 4.8.1 Acceso al módulo
+
+El módulo se activa desde `CotizacionDetalle.jsx` mediante un botón flotante (`fixed bottom-6 right-6`) visible únicamente cuando el estado de la cotización es `aprobada`, `en_ejecucion` o `cerrada`. Al hacer clic se abre `ModalVisita.jsx`.
+
+#### 4.8.2 Componentes Frontend
+
+| Archivo | Descripción |
+|---------|-------------|
+| `frontend/src/modules/cotizaciones/ModalVisita.jsx` | Modal overlay con 4 tabs: Datos, Checklist, Fotos, Resumen IA |
+| `frontend/src/modules/cotizaciones/visitaChecklists.js` | Preguntas hardcodeadas (referencia; fuente oficial migrada a Supabase) |
+
+#### 4.8.3 ModalVisita — Estructura
+
+```
+ModalVisita
+├── Tab DATOS
+│   ├── Fecha de visita
+│   ├── Responsable (usuario actual)
+│   ├── Instalador (select de trabajadores)
+│   ├── Productos (checkboxes: Toldo Vela / Pasto Sintético / Caucho Continuo)
+│   └── Notas
+├── Tab CHECKLIST
+│   ├── Selector de productos (si visita.productos está vacío)
+│   ├── Preguntas cargadas desde visita_preguntas (Supabase)
+│   ├── Agrupadas por: General / Toldo Vela / Pasto Sintético / Caucho Continuo
+│   └── Respuestas guardadas con UPSERT debounced (600ms) en visita_checklist
+├── Tab FOTOS        (estructura implementada, lógica pendiente)
+└── Tab RESUMEN IA   (estructura implementada, lógica pendiente)
+```
+
+**Navegación footer adaptativa:**
+- Tab Datos (sin visita creada): Cancelar | Crear Visita
+- Tab Datos (visita existente): Cancelar | Siguiente →
+- Tab Checklist / Fotos: ← Anterior | Siguiente →
+- Tab Resumen IA: ← Anterior | Cerrar
+
+#### 4.8.4 Normalización de nombres de producto
+
+Los productos se almacenan en BD como `snake_case` pero se muestran como etiquetas legibles. Se usan dos mapeos a nivel de módulo:
+
+```js
+LABEL_TO_SNAKE = { 'Toldo Vela': 'toldo_vela', 'Pasto Sintético': 'pasto_sintetico', 'Caucho Continuo': 'caucho_continuo' }
+SNAKE_TO_LABEL = { 'toldo_vela': 'Toldo Vela', 'pasto_sintetico': 'Pasto Sintético', 'caucho_continuo': 'Caucho Continuo' }
+```
+
+#### 4.8.5 Tablas Supabase
+
+| Tabla | Descripción |
+|-------|-------------|
+| `visitas` | Registro de cada visita a terreno |
+| `visita_preguntas` | Preguntas del checklist configurables por empresa y producto |
+| `visita_checklist` | Respuestas por visita y pregunta |
+
+#### 4.8.6 Pendientes
+
+- **Fix RLS**: `visita_preguntas` tiene RLS habilitado sin políticas SELECT → devuelve `[]` con `error: null`. Solución: `ALTER TABLE visita_preguntas DISABLE ROW LEVEL SECURITY;` o crear política permisiva.
+- **Remover logs de diagnóstico** en `ModalVisita.jsx` y `ConfiguracionPage.jsx`
+- Implementar lógica real de Tab Fotos (upload a Supabase Storage)
+- Implementar Tab Resumen IA (llamada a Claude API)
+
+---
+
 ## 5. FLUJOS DE TRABAJO
 
 ### 5.1 Flujo: Cotización → Orden de Compra → Recepción
@@ -921,7 +1002,7 @@ COT ──→ CONT  (factura emitida genera asiento de venta / CxC)
 ### 8.1 Plataforma Actual
 
 - **Supabase** (PostgreSQL cloud) — `@supabase/supabase-js` v2
-- Tablas confirmadas: `usuarios`, `trabajadores`, `cotizaciones`, `cotizacion_items`, `ordenes_compra`, `oc_items`, `movimientos_bancarios`
+- Tablas confirmadas: `usuarios`, `trabajadores`, `cotizaciones`, `cotizacion_items`, `ordenes_compra`, `oc_items`, `movimientos_bancarios`, `amonestaciones`, `clientes`, `visitas`, `visita_preguntas`, `visita_checklist`
 - Sin migraciones formales aún (schema gestionado manualmente en Supabase Dashboard)
 - Seed de prueba en `database/seed.sql`
 
@@ -985,6 +1066,56 @@ clientes {
 **Cambios a la tabla `gastos`:**
 - Columnas agregadas: `cuenta_contable_id`, `tipo_documento_id`
 - CHECK constraints eliminados: `gastos_categoria_check`, `gastos_tipo_documento_check`
+
+### 8.3.2 Tablas Nuevas Implementadas (v1.8 — Módulo Visitas)
+
+```sql
+-- VISITAS (registro de visita a terreno desde una cotización aprobada)
+visitas {
+  id              UUID        PK
+  empresa_id      UUID
+  cotizacion_id   UUID        FK → cotizaciones
+  fecha           DATE
+  responsable     VARCHAR     Nombre del responsable
+  instalador_id   UUID        FK → trabajadores (opcional)
+  productos       TEXT[]      Array de productos en snake_case ['toldo_vela', ...]
+  notas           TEXT
+  estado          VARCHAR     'pendiente' | 'realizada' | 'cancelada'
+  created_at      TIMESTAMPTZ
+}
+
+-- VISITA_PREGUNTAS (checklist configurable por empresa y producto)
+visita_preguntas {
+  id          UUID        PK
+  empresa_id  UUID
+  producto    VARCHAR     'general' | 'toldo_vela' | 'pasto_sintetico' | 'caucho_continuo'
+  label       TEXT        Texto de la pregunta
+  critical    BOOLEAN     Si es una pregunta crítica (marcada visualmente)
+  orden       INT         Orden de aparición dentro del grupo
+  activo      BOOLEAN     Soft delete (false = eliminada)
+  created_at  TIMESTAMPTZ
+}
+-- NOTA: RLS está habilitado en esta tabla. Si no hay políticas SELECT activas,
+-- las consultas devuelven [] con error: null. Fix: DISABLE ROW LEVEL SECURITY
+-- o CREATE POLICY "allow_select" ON visita_preguntas FOR SELECT USING (true);
+
+-- VISITA_CHECKLIST (respuestas del checklist por visita)
+visita_checklist {
+  id             UUID        PK
+  visita_id      UUID        FK → visitas
+  pregunta_id    UUID        FK → visita_preguntas
+  pregunta_label TEXT        Copia del label al momento de responder
+  respuesta      TEXT
+  critical       BOOLEAN
+  created_at     TIMESTAMPTZ
+  -- Constraint único: (visita_id, pregunta_id) — permite UPSERT
+}
+```
+
+**Seed SQL:** `backend/scripts/seed-visita-preguntas.sql`
+- 41 preguntas totales: 2 general + 12 toldo_vela + 13 caucho_continuo + 14 pasto_sintetico
+- Inicia con `DELETE ... WHERE empresa_id = '...'` para re-ejecución segura
+- `empresa_id`: `22101e7c-ce32-49dc-9a8f-4ea25fc00d2f`
 
 ### 8.4 Esquema Objetivo
 
@@ -1456,13 +1587,13 @@ frontend/
 │   ├── modules/
 │   │   ├── auth/              # LoginPage, AuthContext
 │   │   ├── dashboard/         # DashboardPage
-│   │   ├── cotizaciones/      # CotizacionesPage, CotizacionForm, CotizacionDetalle, PublicCotizacionPage
+│   │   ├── cotizaciones/      # CotizacionesPage, CotizacionForm, CotizacionDetalle, PublicCotizacionPage, ModalVisita, visitaChecklists.js
 │   │   ├── compras/           # ComprasPage, CompraForm, CompraDetalle
 │   │   ├── trabajadores/      # TrabajadoresPage, TrabajadorForm
 │   │   ├── rrhh/              # RRHHPage (básico)
 │   │   ├── finanzas/          # FinanzasPage (movimientos + gastos)
 │   │   ├── usuarios/          # UsuariosPage
-│   │   └── configuracion/     # ConfiguracionPage
+│   │   └── configuracion/     # ConfiguracionPage (tabs: General, Usuarios, Visitas[admin])
 │   ├── layout/
 │   │   ├── AppShell.jsx       # Layout principal con sidebar
 │   │   ├── Sidebar.jsx        # Navegación lateral
@@ -1768,6 +1899,6 @@ Ubicadas en `/nodeapps/erp-api/.env` (no versionadas):
 
 ---
 
-*Documento Maestro ERP MAMKAM — v1.7.0*  
-*Actualizado el 2026-07-25 para reflejar el estado real del código*  
-*Próxima revisión: al completar CRM (verificación webhook Meta) o IAD/CONT*
+*Documento Maestro ERP MAMKAM — v1.8.0*  
+*Actualizado el 2026-07-29 — agrega módulo VIS (Visitas): ModalVisita, checklist desde Supabase, ConfiguracionPage tab Visitas, tablas visitas/visita_preguntas/visita_checklist*  
+*Próxima revisión: al resolver RLS de visita_preguntas, completar tabs Fotos y Resumen IA, o al avanzar CRM/IAD/CONT*
