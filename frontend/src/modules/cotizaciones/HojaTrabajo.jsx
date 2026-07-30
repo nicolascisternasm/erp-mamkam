@@ -202,11 +202,16 @@ export default function HojaTrabajo({ cot, user, empresa }) {
       '',
       '*Observaciones:*',
       observaciones || '(Sin observaciones)',
-      '',
-      `📍 Ver ubicación: ${mapsUrl}`,
-      '',
-      '_Enviado desde MAMKAM ERP_',
     ]
+    if (adjuntos.length > 0) {
+      lineas.push('')
+      lineas.push(`*Adjuntos (${adjuntos.length}):*`)
+      adjuntos.forEach(a => lineas.push(`• ${a.nombre_archivo} → ${a.url}`))
+    }
+    lineas.push('')
+    lineas.push(`📍 Ver ubicación: ${mapsUrl}`)
+    lineas.push('')
+    lineas.push('_Enviado desde MAMKAM ERP_')
     const mensaje = encodeURIComponent(lineas.join('\n'))
     window.open(`https://wa.me/${numero}?text=${mensaje}`, '_blank')
   }
