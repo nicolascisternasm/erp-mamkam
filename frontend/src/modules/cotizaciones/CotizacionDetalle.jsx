@@ -283,11 +283,11 @@ export default function CotizacionDetalle() {
 
   /* ── Render ───────────────────────────────────────────── */
 
-  const showHoja = ['aprobada', 'en_ejecucion', 'cerrada'].includes(cot.estado)
+  const showHojaTrabajo = ['aprobada', 'en_ejecucion', 'cerrada'].includes(cot.estado)
 
   return (
-    <div className={showHoja ? 'w-full max-w-7xl' : 'w-full md:max-w-3xl lg:max-w-5xl'}>
-      <div className={showHoja ? 'grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-5 items-start' : 'space-y-5'}>
+    <div className={showHojaTrabajo ? 'w-full max-w-7xl' : 'w-full md:max-w-3xl lg:max-w-5xl'}>
+      <div className={showHojaTrabajo ? 'grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-5 items-start' : 'space-y-5'}>
         <div className="space-y-5">
       {/* Barra de acciones */}
       <div className="flex flex-wrap items-center gap-2 no-print">
@@ -898,7 +898,7 @@ export default function CotizacionDetalle() {
         <OrdenesCompraCliente ref={ocClienteRef} cot={cot} onUpdate={handleComprobanteUpdate} />
       </div>
         </div>{/* end main column */}
-        {showHoja && <HojaTrabajo cot={cot} user={user} empresa={empresa} />}
+        {showHojaTrabajo && <HojaTrabajo cot={cot} user={user} empresa={empresa} />}
       </div>{/* end grid */}
 
       {/* Modal envío de email */}
