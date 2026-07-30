@@ -9,16 +9,16 @@ export default function HojaTrabajo({ cot, user, empresa }) {
   const [adjuntos,      setAdjuntos]      = useState([])
   const [loading,       setLoading]       = useState(true)
   const [subiendo,      setSubiendo]      = useState([])    // [{ id, name }]
-  const [guardando,         setGuardando]         = useState(false)
-  const [savedOk,           setSavedOk]           = useState(false)
-  const [pdfReady,          setPdfReady]          = useState(false)
-  const [generandoPdf,      setGenerandoPdf]      = useState(false)
-  const [telefonoEncargado, setTelefonoEncargado] = useState('')
+  const [guardando,    setGuardando]    = useState(false)
+  const [savedOk,      setSavedOk]      = useState(false)
+  const [pdfReady,     setPdfReady]     = useState(false)
+  const [generandoPdf, setGenerandoPdf] = useState(false)
+  const [usuarios,     setUsuarios]     = useState([])
+  const [encargadoId,  setEncargadoId]  = useState(null)
 
-  const fileInputRef     = useRef(null)
-  const debounceRef      = useRef(null)
-  const debouncePhoneRef = useRef(null)
-  const pdfRef           = useRef(null)
+  const fileInputRef = useRef(null)
+  const debounceRef  = useRef(null)
+  const pdfRef       = useRef(null)
 
   const productos = (cot.items || []).map(i => i.producto).filter(Boolean).join(', ') || '—'
   const direccion  = [cot.direccion, cot.comuna].filter(Boolean).join(', ') || '—'
@@ -48,7 +48,7 @@ export default function HojaTrabajo({ cot, user, empresa }) {
       if (hoja) {
         setHojaId(hoja.id)
         setObservaciones(hoja.observaciones || '')
-        setTelefonoEncargado(hoja.telefono_encargado || '')
+        setEncargadoId(hoja.encargado_id || null)
 
         const { data: adj } = await supabase
           .from('hoja_trabajo_adjuntos')
@@ -57,6 +57,14 @@ export default function HojaTrabajo({ cot, user, empresa }) {
           .order('created_at')
         setAdjuntos(adj || [])
       }
+
+      const { data: users } = await supabase
+        .from('usuarios')
+        .select('id, nombre, apellidos, telefono')
+        .eq('empresa_id', empresaId)
+        .eq('activo', true)
+        .order('nombre')
+      setUsuarios(users || [])
 
       setLoading(false)
     }
@@ -80,21 +88,16 @@ export default function HojaTrabajo({ cot, user, empresa }) {
     }, 800)
   }
 
-  /* ── Teléfono encargado con debounce 800ms ── */
-  function handleTelefonoEncargado(value) {
-    setTelefonoEncargado(value)
-    clearTimeout(debouncePhoneRef.current)
-    debouncePhoneRef.current = setTimeout(async () => {
-      if (!hojaId) return
-      setGuardando(true)
-      await supabase
-        .from('hoja_trabajo')
-        .update({ telefono_encargado: value, updated_at: new Date().toISOString() })
-        .eq('id', hojaId)
-      setGuardando(false)
-      setSavedOk(true)
-      setTimeout(() => setSavedOk(false), 2000)
-    }, 800)
+  /* ── Seleccionar encargado (guardado inmediato) ── */
+  async function handleEncargado(id) {
+    setEncargadoId(id)
+    if (!hojaId) return
+    await supabase
+      .from('hoja_trabajo')
+      .update({ encargado_id: id || null, updated_at: new Date().toISOString() })
+      .eq('id', hojaId)
+    setSavedOk(true)
+    setTimeout(() => setSavedOk(false), 2000)
   }
 
   /* ── Subir adjuntos ── */
@@ -175,6 +178,9 @@ export default function HojaTrabajo({ cot, user, empresa }) {
 
   const fmtKb = kb => kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb} KB`
 
+  const encargado         = usuarios.find(u => u.id === encargadoId) || null
+  const telefonoEncargado = encargado?.telefono || null
+
   const mapsQuery = encodeURIComponent([cot.direccion, cot.comuna, 'Chile'].filter(Boolean).join(', '))
   const mapsUrl   = `https://www.google.com/maps/search/?api=1&query=${mapsQuery}`
 
@@ -248,23 +254,29 @@ export default function HojaTrabajo({ cot, user, empresa }) {
         />
       </div>
 
-      {/* ── Teléfono encargado ── */}
+      {/* ── Encargado de instalaciones ── */}
       <div className="px-4 py-3 border-b border-slate-100">
         <div className="flex items-center justify-between mb-1.5">
-          <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Tel. encargado instalaciones</span>
-          {(guardando || savedOk) && (
-            <span className={`text-xs font-medium ${savedOk ? 'text-emerald-600' : 'text-slate-400'}`}>
-              {savedOk ? 'Guardado ✓' : 'Guardando…'}
-            </span>
+          <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Encargado de instalaciones</span>
+          {savedOk && (
+            <span className="text-xs font-medium text-emerald-600">Guardado ✓</span>
           )}
         </div>
-        <input
-          type="tel"
-          value={telefonoEncargado}
-          onChange={e => handleTelefonoEncargado(e.target.value)}
-          placeholder="+56 9 XXXX XXXX"
-          className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-400"
-        />
+        <select
+          value={encargadoId || ''}
+          onChange={e => handleEncargado(e.target.value || null)}
+          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white text-slate-700"
+        >
+          <option value="">Seleccionar encargado...</option>
+          {usuarios.map(u => (
+            <option key={u.id} value={u.id}>
+              {[u.nombre, u.apellidos].filter(Boolean).join(' ')}
+            </option>
+          ))}
+        </select>
+        {encargadoId && !telefonoEncargado && (
+          <p className="text-xs text-red-500 mt-1">Este usuario no tiene teléfono registrado</p>
+        )}
       </div>
 
       {/* ── Adjuntos ── */}
@@ -332,7 +344,7 @@ export default function HojaTrabajo({ cot, user, empresa }) {
           <MapPin className="w-4 h-4" />
           Ver en Google Maps
         </button>
-        {telefonoEncargado && (
+        {encargadoId && telefonoEncargado && (
           <button
             onClick={handleWhatsApp}
             className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-white bg-green-600 hover:bg-green-700 transition-colors"
