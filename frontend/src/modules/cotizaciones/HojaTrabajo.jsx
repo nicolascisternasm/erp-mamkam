@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { ClipboardCheck, Paperclip, Download, Trash2, Loader2 } from 'lucide-react'
+import { ClipboardCheck, Paperclip, Download, Trash2, Loader2, MapPin, MessageCircle } from 'lucide-react'
 import { supabase } from '../../services/supabase'
 import { downloadPDF } from '../../utils/pdf'
 
@@ -9,14 +9,16 @@ export default function HojaTrabajo({ cot, user, empresa }) {
   const [adjuntos,      setAdjuntos]      = useState([])
   const [loading,       setLoading]       = useState(true)
   const [subiendo,      setSubiendo]      = useState([])    // [{ id, name }]
-  const [guardando,     setGuardando]     = useState(false)
-  const [savedOk,       setSavedOk]       = useState(false)
-  const [pdfReady,      setPdfReady]      = useState(false)
-  const [generandoPdf,  setGenerandoPdf]  = useState(false)
+  const [guardando,         setGuardando]         = useState(false)
+  const [savedOk,           setSavedOk]           = useState(false)
+  const [pdfReady,          setPdfReady]          = useState(false)
+  const [generandoPdf,      setGenerandoPdf]      = useState(false)
+  const [telefonoEncargado, setTelefonoEncargado] = useState('')
 
-  const fileInputRef = useRef(null)
-  const debounceRef  = useRef(null)
-  const pdfRef       = useRef(null)
+  const fileInputRef     = useRef(null)
+  const debounceRef      = useRef(null)
+  const debouncePhoneRef = useRef(null)
+  const pdfRef           = useRef(null)
 
   const productos = (cot.items || []).map(i => i.producto).filter(Boolean).join(', ') || '—'
   const direccion  = [cot.direccion, cot.comuna].filter(Boolean).join(', ') || '—'
@@ -46,6 +48,7 @@ export default function HojaTrabajo({ cot, user, empresa }) {
       if (hoja) {
         setHojaId(hoja.id)
         setObservaciones(hoja.observaciones || '')
+        setTelefonoEncargado(hoja.telefono_encargado || '')
 
         const { data: adj } = await supabase
           .from('hoja_trabajo_adjuntos')
@@ -70,6 +73,23 @@ export default function HojaTrabajo({ cot, user, empresa }) {
       await supabase
         .from('hoja_trabajo')
         .update({ observaciones: value, updated_at: new Date().toISOString() })
+        .eq('id', hojaId)
+      setGuardando(false)
+      setSavedOk(true)
+      setTimeout(() => setSavedOk(false), 2000)
+    }, 800)
+  }
+
+  /* ── Teléfono encargado con debounce 800ms ── */
+  function handleTelefonoEncargado(value) {
+    setTelefonoEncargado(value)
+    clearTimeout(debouncePhoneRef.current)
+    debouncePhoneRef.current = setTimeout(async () => {
+      if (!hojaId) return
+      setGuardando(true)
+      await supabase
+        .from('hoja_trabajo')
+        .update({ telefono_encargado: value, updated_at: new Date().toISOString() })
         .eq('id', hojaId)
       setGuardando(false)
       setSavedOk(true)
@@ -155,6 +175,33 @@ export default function HojaTrabajo({ cot, user, empresa }) {
 
   const fmtKb = kb => kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb} KB`
 
+  const mapsQuery = encodeURIComponent([cot.direccion, cot.comuna, 'Chile'].filter(Boolean).join(', '))
+  const mapsUrl   = `https://www.google.com/maps/search/?api=1&query=${mapsQuery}`
+
+  function handleMaps() {
+    window.open(mapsUrl, '_blank')
+  }
+
+  function handleWhatsApp() {
+    const numero = telefonoEncargado.replace(/\D/g, '')
+    const lineas = [
+      `*HOJA DE TRABAJO — ${cot.numero}*`,
+      '',
+      `*Cliente:* ${cot.cliente || '—'}`,
+      `*Dirección:* ${[cot.direccion, cot.comuna].filter(Boolean).join(', ') || '—'}`,
+      `*Productos:* ${productos}`,
+      '',
+      '*Observaciones:*',
+      observaciones || '(Sin observaciones)',
+      '',
+      `📍 Ver ubicación: ${mapsUrl}`,
+      '',
+      '_Enviado desde MAMKAM ERP_',
+    ]
+    const mensaje = encodeURIComponent(lineas.join('\n'))
+    window.open(`https://wa.me/${numero}?text=${mensaje}`, '_blank')
+  }
+
   if (loading) {
     return (
       <div className="bg-white border border-slate-200 rounded-2xl shadow-sm flex items-center justify-center h-40">
@@ -198,6 +245,25 @@ export default function HojaTrabajo({ cot, user, empresa }) {
           placeholder="Agregar observaciones..."
           rows={5}
           className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-400 resize-none leading-relaxed"
+        />
+      </div>
+
+      {/* ── Teléfono encargado ── */}
+      <div className="px-4 py-3 border-b border-slate-100">
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Tel. encargado instalaciones</span>
+          {(guardando || savedOk) && (
+            <span className={`text-xs font-medium ${savedOk ? 'text-emerald-600' : 'text-slate-400'}`}>
+              {savedOk ? 'Guardado ✓' : 'Guardando…'}
+            </span>
+          )}
+        </div>
+        <input
+          type="tel"
+          value={telefonoEncargado}
+          onChange={e => handleTelefonoEncargado(e.target.value)}
+          placeholder="+56 9 XXXX XXXX"
+          className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-400"
         />
       </div>
 
@@ -254,6 +320,26 @@ export default function HojaTrabajo({ cot, user, empresa }) {
               </div>
             ))}
           </div>
+        )}
+      </div>
+
+      {/* ── Acciones ── */}
+      <div className="px-4 py-3 border-b border-slate-100 space-y-2">
+        <button
+          onClick={handleMaps}
+          className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-slate-700 border border-slate-300 hover:bg-slate-50 transition-colors"
+        >
+          <MapPin className="w-4 h-4" />
+          Ver en Google Maps
+        </button>
+        {telefonoEncargado && (
+          <button
+            onClick={handleWhatsApp}
+            className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-white bg-green-600 hover:bg-green-700 transition-colors"
+          >
+            <MessageCircle className="w-4 h-4" />
+            Enviar por WhatsApp
+          </button>
         )}
       </div>
 
