@@ -285,10 +285,8 @@ export default function CotizacionDetalle() {
 
   const showHojaTrabajo = ['aprobada', 'en_ejecucion', 'cerrada'].includes(cot.estado)
 
-  return (
-    <div className={showHojaTrabajo ? 'w-full max-w-7xl' : 'w-full md:max-w-3xl lg:max-w-5xl'}>
-      <div className={showHojaTrabajo ? 'grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-5 items-start' : 'space-y-5'}>
-        <div className="space-y-5">
+  const inner = (
+    <>
       {/* Barra de acciones */}
       <div className="flex flex-wrap items-center gap-2 no-print">
         <button onClick={() => navigate('/cotizaciones')} className="btn-ghost p-2">
@@ -897,9 +895,6 @@ export default function CotizacionDetalle() {
         <ComprobantesCotizacion ref={comprobantesRef} cot={cot} onUpdate={handleComprobanteUpdate} />
         <OrdenesCompraCliente ref={ocClienteRef} cot={cot} onUpdate={handleComprobanteUpdate} />
       </div>
-        </div>{/* end main column */}
-        {showHojaTrabajo && <HojaTrabajo cot={cot} user={user} empresa={empresa} />}
-      </div>{/* end grid */}
 
       {/* Modal envío de email */}
       {modalEnvioEmail && (
@@ -1102,6 +1097,26 @@ export default function CotizacionDetalle() {
       {/* Modal Visita */}
       {modalVisita && cot && (
         <ModalVisita cot={cot} onClose={() => setModalVisita(false)} />
+      )}
+    </>
+  )
+
+  return (
+    <div className={showHojaTrabajo
+      ? 'w-full max-w-7xl'
+      : 'w-full md:max-w-3xl lg:max-w-5xl space-y-5'
+    }>
+      {showHojaTrabajo ? (
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-5 items-start">
+          <div className="space-y-5">
+            {inner}
+          </div>
+          <div className="lg:sticky lg:top-6">
+            <HojaTrabajo cot={cot} user={user} empresa={empresa} />
+          </div>
+        </div>
+      ) : (
+        inner
       )}
     </div>
   )
