@@ -109,12 +109,13 @@ export default function HojaTrabajo({ cot, user, empresa }) {
     for (const file of files) {
       if (file.size > 20 * 1024 * 1024) continue
       const uploadId = `${Date.now()}_${Math.random()}`
-      const path     = `${cot.id}/${Date.now()}_${file.name.replace(/\s/g, '_')}`
+      const bucket   = file.type.startsWith('video/') ? 'visitas-audios' : 'visitas-fotos'
+      const path     = `hoja-trabajo/${cot.id}/${Date.now()}_${file.name.replace(/\s/g, '_')}`
 
       setSubiendo(prev => [...prev, { id: uploadId, name: file.name }])
 
       const { error: upErr } = await supabase.storage
-        .from('hoja-trabajo-adjuntos')
+        .from(bucket)
         .upload(path, file, { upsert: false, contentType: file.type })
 
       if (upErr) {
@@ -123,7 +124,7 @@ export default function HojaTrabajo({ cot, user, empresa }) {
       }
 
       const { data: { publicUrl } } = supabase.storage
-        .from('hoja-trabajo-adjuntos')
+        .from(bucket)
         .getPublicUrl(path)
 
       const { data: adj } = await supabase
@@ -134,6 +135,7 @@ export default function HojaTrabajo({ cot, user, empresa }) {
           nombre_archivo: file.name,
           tamano_kb:      Math.round(file.size / 1024),
           subido_por:     user?.nombre || user?.email || null,
+          bucket,
         })
         .select()
         .single()
@@ -146,10 +148,11 @@ export default function HojaTrabajo({ cot, user, empresa }) {
   /* ── Eliminar adjunto ── */
   async function handleEliminar(adjunto) {
     if (!window.confirm(`¿Eliminar "${adjunto.nombre_archivo}"?`)) return
-    const parts       = adjunto.url.split('/hoja-trabajo-adjuntos/')
+    const bucket      = adjunto.bucket || 'visitas-fotos'
+    const parts       = adjunto.url.split(`/${bucket}/`)
     const storagePath = parts[1]
     if (storagePath) {
-      await supabase.storage.from('hoja-trabajo-adjuntos').remove([storagePath])
+      await supabase.storage.from(bucket).remove([storagePath])
     }
     await supabase.from('hoja_trabajo_adjuntos').delete().eq('id', adjunto.id)
     setAdjuntos(prev => prev.filter(a => a.id !== adjunto.id))
