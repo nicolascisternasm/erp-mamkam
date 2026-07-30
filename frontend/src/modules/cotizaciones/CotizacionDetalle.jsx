@@ -17,6 +17,7 @@ import { supabase } from '../../services/supabase'
 import ComprobantesCotizacion from './ComprobantesCotizacion'
 import OrdenesCompraCliente from './OrdenesCompraCliente'
 import ModalVisita from './ModalVisita'
+import HojaTrabajo from './HojaTrabajo'
 
 function buildPublicUrl(cot, empresa) {
   const lean = {
@@ -282,8 +283,12 @@ export default function CotizacionDetalle() {
 
   /* ── Render ───────────────────────────────────────────── */
 
+  const showHoja = ['aprobada', 'en_ejecucion', 'cerrada'].includes(cot.estado)
+
   return (
-    <div className="w-full md:max-w-3xl lg:max-w-5xl space-y-5">
+    <div className={showHoja ? 'w-full max-w-7xl' : 'w-full md:max-w-3xl lg:max-w-5xl'}>
+      <div className={showHoja ? 'grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-5 items-start' : 'space-y-5'}>
+        <div className="space-y-5">
       {/* Barra de acciones */}
       <div className="flex flex-wrap items-center gap-2 no-print">
         <button onClick={() => navigate('/cotizaciones')} className="btn-ghost p-2">
@@ -892,6 +897,9 @@ export default function CotizacionDetalle() {
         <ComprobantesCotizacion ref={comprobantesRef} cot={cot} onUpdate={handleComprobanteUpdate} />
         <OrdenesCompraCliente ref={ocClienteRef} cot={cot} onUpdate={handleComprobanteUpdate} />
       </div>
+        </div>{/* end main column */}
+        {showHoja && <HojaTrabajo cot={cot} user={user} empresa={empresa} />}
+      </div>{/* end grid */}
 
       {/* Modal envío de email */}
       {modalEnvioEmail && (
