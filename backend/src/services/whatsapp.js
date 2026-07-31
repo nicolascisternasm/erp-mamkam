@@ -17,7 +17,11 @@ async function enviarMensaje(telefono, templateName, variables, languageCode = '
         type: 'body',
         parameters: Array.isArray(variables)
           ? variables.map(value => ({ type: 'text', text: String(value) }))
-          : Object.values(variables).map(value => ({ type: 'text', text: String(value) })),
+          : Object.entries(variables).map(([key, value]) => ({
+              type: 'text',
+              text: String(value ?? ''),
+              parameter_name: key,
+            })),
       }],
     },
   }
