@@ -2,7 +2,7 @@ const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID
 const TOKEN = process.env.WHATSAPP_TOKEN
 const API_URL = `https://graph.facebook.com/v25.0/${PHONE_NUMBER_ID}/messages`
 
-async function enviarMensaje(telefono, templateName, variables) {
+async function enviarMensaje(telefono, templateName, variables, languageCode = 'es') {
   const numero = telefono.replace(/\s/g, '').replace(/^0/, '')
   const numeroFormateado = numero.startsWith('+') ? numero : `+56${numero}`
 
@@ -12,7 +12,7 @@ async function enviarMensaje(telefono, templateName, variables) {
     type: 'template',
     template: {
       name: templateName,
-      language: { code: 'es_ES' },
+      language: { code: languageCode },
       components: [{
         type: 'body',
         parameters: Array.isArray(variables)
@@ -22,7 +22,6 @@ async function enviarMensaje(telefono, templateName, variables) {
     },
   }
 
-  console.log('[whatsapp/enviarMensaje] body:', JSON.stringify(body))
   const response = await fetch(API_URL, {
     method: 'POST',
     headers: {
@@ -33,8 +32,6 @@ async function enviarMensaje(telefono, templateName, variables) {
   })
 
   const data = await response.json()
-  console.log('[whatsapp/enviarMensaje] status:', response.status)
-  console.log('[whatsapp/enviarMensaje] response:', JSON.stringify(data))
   if (!response.ok) throw new Error(data.error?.message || 'Error WhatsApp')
   return data
 }
