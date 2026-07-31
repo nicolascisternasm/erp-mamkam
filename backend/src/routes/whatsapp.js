@@ -53,7 +53,8 @@ router.post('/cotizacion-pdf', async (req, res) => {
       await enviarMensaje(telefono, 'cotizacion_cliente', { nombre, numero, total, fecha })
       console.log('[cotizacion-pdf] template enviado OK')
     } catch (templateErr) {
-      console.error('[cotizacion-pdf] template error completo:', JSON.stringify(templateErr))
+      console.error('[cotizacion-pdf] template error mensaje:', templateErr.message)
+      console.error('[cotizacion-pdf] template error stack:', templateErr.stack)
     }
 
     const docResult = await enviarDocumento(telefono, pdfUrl, `Cotizacion_${numero}.pdf`, `Cotización ${numero} - ${total}`)

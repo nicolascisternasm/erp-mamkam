@@ -32,6 +32,8 @@ async function enviarMensaje(telefono, templateName, variables) {
   })
 
   const data = await response.json()
+  console.log('[whatsapp/enviarMensaje] status:', response.status)
+  console.log('[whatsapp/enviarMensaje] response:', JSON.stringify(data))
   if (!response.ok) throw new Error(data.error?.message || 'Error WhatsApp')
   return data
 }
