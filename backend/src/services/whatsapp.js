@@ -12,7 +12,7 @@ async function enviarMensaje(telefono, templateName, variables) {
     type: 'template',
     template: {
       name: templateName,
-      language: { code: 'es_ES' },
+      language: { code: 'es' },
       components: [{
         type: 'body',
         parameters: Array.isArray(variables)
