@@ -12,7 +12,7 @@ async function enviarMensaje(telefono, templateName, variables) {
     type: 'template',
     template: {
       name: templateName,
-      language: { code: 'es' },
+      language: { code: 'es_ES' },
       components: [{
         type: 'body',
         parameters: Array.isArray(variables)
@@ -22,6 +22,7 @@ async function enviarMensaje(telefono, templateName, variables) {
     },
   }
 
+  console.log('[whatsapp/enviarMensaje] body:', JSON.stringify(body))
   const response = await fetch(API_URL, {
     method: 'POST',
     headers: {
