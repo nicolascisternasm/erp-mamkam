@@ -11,7 +11,7 @@ import { ConfirmModal } from '../../components/Modal'
 import {
   ArrowLeft, Pencil, Trash2, MessageCircle, Mail, Download,
   ShoppingCart, CheckCircle, XCircle, Send, Loader2, ChevronRight,
-  MapPin, Play, X, Search, AlertCircle, Paperclip,
+  MapPin, Play, X, Search, AlertCircle, Paperclip, FileText,
 } from 'lucide-react'
 import { supabase } from '../../services/supabase'
 import ComprobantesCotizacion from './ComprobantesCotizacion'
@@ -737,26 +737,29 @@ export default function CotizacionDetalle() {
                           )
                         })()}
 
-                        {conciliado && !tieneFactura && (
-                          <div className="flex items-center justify-between mt-2 pl-7">
-                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-700">
-                              <AlertCircle className="w-3 h-3" /> Pagado · Sin factura
-                            </span>
-                            <button
-                              onClick={() => setAsociarFacturaModal({ condicion: cp, condicionIdx: i })}
-                              className="text-xs font-medium text-indigo-600 hover:text-indigo-800 underline"
-                            >
-                              Asociar factura
-                            </button>
-                          </div>
-                        )}
-                        {conciliado && tieneFactura && (
-                          <div className="mt-2 pl-7">
+                        <div className="mt-2 pl-7 flex items-center gap-2 flex-wrap">
+                          {!tieneFactura && (
+                            <>
+                              {conciliado && (
+                                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-700">
+                                  <AlertCircle className="w-3 h-3" /> Pagado · Sin factura
+                                </span>
+                              )}
+                              <button
+                                onClick={() => setAsociarFacturaModal({ condicion: cp, condicionIdx: i })}
+                                className="inline-flex items-center gap-1 text-xs border border-slate-200 rounded-lg px-2 py-1 text-slate-600 hover:bg-slate-50 no-print"
+                              >
+                                <FileText className="w-3 h-3" />
+                                + Factura
+                              </button>
+                            </>
+                          )}
+                          {tieneFactura && (
                             <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">
                               ✓ Pagado · Factura Nº{cp.factura_folio}
                             </span>
-                          </div>
-                        )}
+                          )}
+                        </div>
                       </div>
                     )
                   })}

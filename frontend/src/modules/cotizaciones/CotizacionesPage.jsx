@@ -262,7 +262,23 @@ export default function CotizacionesPage() {
           )
         })()}
       </td>
-      <td className="table-td"><Badge status={c.estado} /></td>
+      <td className="table-td">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <Badge status={c.estado} />
+          {esActiva(c) && (c.condiciones_pago || []).some(cp => {
+            const sinComprobante = !cp.movimiento_id && !(c.pagosComprobantes || []).some(p => p.condicion_id === cp.id)
+            const sinFactura = !cp.factura_sii_id
+            return sinComprobante || sinFactura
+          }) && (
+            <span
+              title="Tiene condiciones sin comprobante de pago o sin factura de venta"
+              className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-amber-400 text-white text-[9px] font-black cursor-help"
+            >
+              ?
+            </span>
+          )}
+        </div>
+      </td>
       <td className="table-td">
         <div className="flex items-center justify-end gap-1">
           <button title="Ver detalle" onClick={() => navigate(`/cotizaciones/${c.id}`)} className="btn-ghost p-1.5">
