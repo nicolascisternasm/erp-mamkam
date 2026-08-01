@@ -91,6 +91,7 @@ export default function CotizacionesPage() {
   const [duplicateId, setDuplicateId] = useState(null)
   const [toast, setToast] = useState(null)
   const [movimientosCot, setMovimientosCot] = useState([])
+  const [condicionesPorCot, setCondicionesPorCot] = useState({})
 
   const cargarProductos = useCallback(async () => {
     if (!supabase || !user?.empresa_id) return
@@ -109,6 +110,23 @@ export default function CotizacionesPage() {
       .eq('empresa_id', user.empresa_id)
       .then(({ data }) => { if (data) setMovimientosCot(data) })
   }, [user?.empresa_id])
+
+  useEffect(() => {
+    const activas = cotizaciones.filter(c =>
+      c.estado === 'aprobada' || c.estado === 'en_ejecucion'
+    )
+    if (activas.length === 0) return
+    supabase
+      .from('cotizaciones')
+      .select('id, condiciones_pago, pagos_comprobantes')
+      .in('id', activas.map(c => c.id))
+      .then(({ data }) => {
+        if (!data) return
+        const map = {}
+        data.forEach(row => { map[row.id] = row })
+        setCondicionesPorCot(map)
+      })
+  }, [cotizaciones])
 
   // Resetear a página 1 cuando cambia cualquier filtro o el tamaño de página
   useEffect(() => { setPaginaActual(1) }, [search, filtroEstado, filtroVendedor, filtroFecha, filtroProductos, itemsPorPagina])
@@ -265,18 +283,24 @@ export default function CotizacionesPage() {
       <td className="table-td">
         <div className="flex items-center gap-1.5 flex-wrap">
           <Badge status={c.estado} />
-          {esActiva(c) && (c.condiciones_pago || []).some(cp => {
-            const sinComprobante = !cp.movimiento_id && !(c.pagosComprobantes || []).some(p => p.condicion_id === cp.id)
-            const sinFactura = !cp.factura_sii_id
-            return sinComprobante || sinFactura
-          }) && (
+          {(() => {
+            const cotData = condicionesPorCot[c.id]
+            const condiciones = cotData?.condiciones_pago || []
+            const pagosComp = cotData?.pagos_comprobantes || []
+            const necesitaAtencion = esActiva(c) && condiciones.some(cp => {
+              const sinComprobante = !pagosComp.some(p => p.condicion_id === cp.id)
+              const sinFactura = !cp.factura_sii_id
+              return sinComprobante || sinFactura
+            })
+            return necesitaAtencion && (
             <span
               title="Tiene condiciones sin comprobante de pago o sin factura de venta"
               className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-amber-400 text-white text-[9px] font-black cursor-help"
             >
               ?
             </span>
-          )}
+          )
+          })()}
         </div>
       </td>
       <td className="table-td">
