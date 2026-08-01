@@ -393,6 +393,7 @@ export default function FinanzasPage() {
   const [confirmDelCb,      setConfirmDelCb]      = useState(null)
   const [delCbLoading,      setDelCbLoading]      = useState(false)
 
+  const [mpSyncing,         setMpSyncing]         = useState(false)
   const [movsBancarios,     setMovsBancarios]     = useState([])
   const [movsBLoading,      setMovsBLoading]      = useState(false)
   const [filtroCbId,        setFiltroCbId]        = useState('todas')
@@ -1437,6 +1438,19 @@ export default function FinanzasPage() {
     setShowCartola(false)
   }
 
+  const handleSyncMP = async () => {
+    setMpSyncing(true)
+    try {
+      const { sincronizados } = await apiClient.get('/mercadopago/sync')
+      showToastCuenta('success', `Sincronizados ${sincronizados} movimientos de Mercado Pago`)
+      cargarMovsBancarios()
+    } catch (err) {
+      showToastCuenta('error', `Error al sincronizar MP: ${err.message}`)
+    } finally {
+      setMpSyncing(false)
+    }
+  }
+
   return (
     <div className="space-y-5 w-full">
       {/* Header */}
@@ -1463,6 +1477,12 @@ export default function FinanzasPage() {
           <button onClick={() => setShowFormBanco(true)} className="btn-primary">
             <Plus className="w-4 h-4" />
             Agregar cuenta
+          </button>
+        )}
+        {activeTab === 'gastos' && cuentasBancarias.some(cb => cb.nombre?.toLowerCase().includes('mercado pago')) && (
+          <button onClick={handleSyncMP} disabled={mpSyncing} className="btn-secondary">
+            <RefreshCw className={`w-4 h-4 ${mpSyncing ? 'animate-spin' : ''}`} />
+            {mpSyncing ? 'Sincronizando...' : 'Sincronizar MP'}
           </button>
         )}
         {activeTab === 'movimientos' && (
