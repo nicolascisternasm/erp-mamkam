@@ -164,7 +164,7 @@ router.get('/sync', requireAuth, async (req, res) => {
     const { movimientos, fuente } = await fetchMovimientosRango(30)
     const sincronizados = await upsertMovimientos(movimientos, empresaId, fuente)
 
-    res.json({ sincronizados, total: movimientos.length, fuente })
+    res.json({ data: { sincronizados, total: movimientos.length, fuente } })
   } catch (err) {
     console.error('[MP sync] error:', err.message)
     res.status(500).json({ error: err.message })
