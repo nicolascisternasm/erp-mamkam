@@ -86,20 +86,17 @@ async function generarYDescargarReporte(diasAtras) {
 
 function parsearCSVMercadoPago(csvText) {
   const lineas = csvText.split('\n').filter(Boolean)
-  console.log('[MP CSV] primeras 3 líneas:', csvText.split('\n').slice(0, 3))
-  console.log('[MP CSV] total líneas:', csvText.split('\n').length)
   const headerIdx = lineas.findIndex(l =>
     l.toUpperCase().includes('DATE') || l.toUpperCase().includes('FECHA')
   )
-  console.log('[MP CSV] header encontrado en índice:', headerIdx)
   if (headerIdx < 0) return []
 
-  const header = lineas[headerIdx].split(',').map(h => h.trim().replace(/"/g, '').toUpperCase())
-  console.log('[MP CSV] columnas del header:', header)
+  const sep = lineas[headerIdx].includes(';') ? ';' : ','
+  const header = lineas[headerIdx].split(sep).map(h => h.trim().replace(/"/g, '').toUpperCase())
   const movimientos = []
 
   for (let i = headerIdx + 1; i < lineas.length; i++) {
-    const cols = lineas[i].split(',').map(c => c.trim().replace(/"/g, ''))
+    const cols = lineas[i].split(sep).map(c => c.trim().replace(/"/g, ''))
     if (cols.length < 3) continue
 
     const get = (keys) => {
@@ -110,10 +107,13 @@ function parsearCSVMercadoPago(csvText) {
       return ''
     }
 
-    const fecha      = get(['DATE', 'FECHA', 'DATE_CREATED'])
-    const monto      = parseFloat(get(['NET_CREDIT_AMOUNT', 'SETTLEMENT_NET_AMOUNT', 'NET_AMOUNT', 'AMOUNT']) || '0')
+    const fecha       = get(['DATE', 'FECHA', 'DATE_CREATED'])
+    const credito     = parseFloat(get(['NET_CREDIT_AMOUNT']) || '0')
+    const debito      = parseFloat(get(['NET_DEBIT_AMOUNT']) || '0')
+    const monto       = credito > 0 ? credito : -debito
+    const tipo        = credito > 0 ? 'abono' : 'cargo'
     const descripcion = get(['DESCRIPTION', 'PAYMENT_METHOD', 'TRANSACTION_TYPE', 'TYPE'])
-    const sourceId   = get(['SOURCE_ID', 'PAYMENT_ID', 'ID'])
+    const sourceId    = get(['SOURCE_ID', 'PAYMENT_ID', 'ID'])
 
     if (!fecha || isNaN(monto) || monto === 0) continue
 
@@ -122,12 +122,11 @@ function parsearCSVMercadoPago(csvText) {
       fecha: fecha.slice(0, 10),
       descripcion: `MP: ${descripcion}`,
       monto: Math.abs(monto),
-      tipo: monto > 0 ? 'abono' : 'cargo',
+      tipo,
       glosa: 'Mercado Pago - Liberaciones',
     })
   }
 
-  console.log('[MP CSV] movimientos parseados:', movimientos.length)
   return movimientos
 }
 
