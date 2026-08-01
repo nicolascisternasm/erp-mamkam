@@ -120,10 +120,18 @@ export default function CotizacionesPage() {
       .from('cotizaciones')
       .select('id, condiciones_pago, pagos_comprobantes')
       .in('id', activas.map(c => c.id))
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        console.log('[condicionesPorCot] error:', error)
+        console.log('[condicionesPorCot] data:', JSON.stringify(data?.slice(0, 2)))
         if (!data) return
         const map = {}
         data.forEach(row => { map[row.id] = row })
+        console.log('[condicionesPorCot] map keys:', Object.keys(map).length)
+        const primera = data[0]
+        if (primera) {
+          console.log('[condicionesPorCot] condiciones_pago[0]:', JSON.stringify(primera.condiciones_pago))
+          console.log('[condicionesPorCot] pagos_comprobantes[0]:', JSON.stringify(primera.pagos_comprobantes))
+        }
         setCondicionesPorCot(map)
       })
   }, [cotizaciones])
@@ -284,6 +292,7 @@ export default function CotizacionesPage() {
         <div className="flex items-center gap-1.5 flex-wrap">
           <Badge status={c.estado} />
           {(() => {
+            if (esActiva(c)) console.log('[badge]', c.id, 'condicionesPorCot entry:', condicionesPorCot[c.id])
             const cotData = condicionesPorCot[c.id]
             const condiciones = cotData?.condiciones_pago || []
             const pagosComp = cotData?.pagos_comprobantes || []
