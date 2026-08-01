@@ -16,26 +16,115 @@ async function getEmpresaId() {
   return data?.empresa_id
 }
 
-// Convierte un movimiento de /v1/account/movements/search al formato de la tabla
-function buildMovimientoFromMovement(movement, empresaId) {
-  const fecha = (movement.date_created || new Date().toISOString()).slice(0, 10)
-  const monto = Math.abs(movement.amount || 0)
-  const tipo = (movement.amount || 0) >= 0 ? 'abono' : 'cargo'
-  return {
-    id: `mp-mov-${movement.id}`,
-    empresa_id: empresaId,
-    fecha,
-    descripcion: `MP: ${movement.description || movement.reference_id || ''}`,
-    tipo,
-    monto,
-    conciliado: false,
-    cuenta_bancaria_id: MP_CUENTA_ID,
-    glosa: `Mercado Pago - ${movement.type_description || movement.type || ''}`,
-    archivo_origen: 'mercadopago_webhook',
+// ── Reporte de Liberaciones ───────────────────────────────────────────────────
+
+async function generarYDescargarReporte(diasAtras) {
+  const TOKEN = process.env.MP_ACCESS_TOKEN
+  const headers = {
+    'Authorization': `Bearer ${TOKEN}`,
+    'Content-Type': 'application/json',
   }
+
+  const ahora = new Date()
+  const inicio = new Date(ahora)
+  inicio.setDate(inicio.getDate() - diasAtras)
+
+  const begin_date = inicio.toISOString().replace(/\.\d{3}Z$/, '.000Z')
+  const end_date   = ahora.toISOString().replace(/\.\d{3}Z$/, '.000Z')
+
+  // 1. Solicitar generación del reporte
+  console.log('[MP] Solicitando generación del reporte de liberaciones...')
+  const genRes = await fetch('https://api.mercadopago.com/v1/account/release_report', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ begin_date, end_date }),
+  })
+
+  if (!genRes.ok) {
+    const err = await genRes.text()
+    console.error('[MP] Error generando reporte:', err)
+    throw new Error('Error generando reporte de MP')
+  }
+
+  const genData = await genRes.json()
+  console.log('[MP] Reporte solicitado:', genData.file_name || 'pendiente')
+
+  // 2. Polling hasta que el reporte esté listo (máx 60 seg)
+  let fileName = genData.file_name
+  if (!fileName) {
+    for (let i = 0; i < 12; i++) {
+      await new Promise(r => setTimeout(r, 5000))
+      const listRes = await fetch('https://api.mercadopago.com/v1/account/release_report/list', {
+        headers: { 'Authorization': `Bearer ${TOKEN}` },
+      })
+      const lista = await listRes.json()
+      const reciente = Array.isArray(lista)
+        ? lista.find(r => new Date(r.date_created) >= new Date(begin_date))
+        : null
+      if (reciente?.file_name) {
+        fileName = reciente.file_name
+        console.log('[MP] Reporte listo:', fileName)
+        break
+      }
+    }
+  }
+
+  if (!fileName) throw new Error('Timeout esperando reporte de MP')
+
+  // 3. Descargar el CSV
+  const csvRes = await fetch(`https://api.mercadopago.com/v1/account/release_report/${fileName}`, {
+    headers: { 'Authorization': `Bearer ${TOKEN}` },
+  })
+  if (!csvRes.ok) throw new Error('Error descargando CSV de MP')
+
+  const csvText = await csvRes.text()
+  return parsearCSVMercadoPago(csvText)
 }
 
-// Convierte un pago de /v1/payments/{id} al formato de la tabla (legacy webhook)
+function parsearCSVMercadoPago(csvText) {
+  const lineas = csvText.split('\n').filter(Boolean)
+  const headerIdx = lineas.findIndex(l =>
+    l.toUpperCase().includes('DATE') || l.toUpperCase().includes('FECHA')
+  )
+  if (headerIdx < 0) return []
+
+  const header = lineas[headerIdx].split(',').map(h => h.trim().replace(/"/g, '').toUpperCase())
+  const movimientos = []
+
+  for (let i = headerIdx + 1; i < lineas.length; i++) {
+    const cols = lineas[i].split(',').map(c => c.trim().replace(/"/g, ''))
+    if (cols.length < 3) continue
+
+    const get = (keys) => {
+      for (const k of keys) {
+        const idx = header.findIndex(h => h.includes(k))
+        if (idx >= 0) return cols[idx] || ''
+      }
+      return ''
+    }
+
+    const fecha      = get(['DATE', 'FECHA', 'DATE_CREATED'])
+    const monto      = parseFloat(get(['NET_CREDIT_AMOUNT', 'SETTLEMENT_NET_AMOUNT', 'NET_AMOUNT', 'AMOUNT']) || '0')
+    const descripcion = get(['DESCRIPTION', 'PAYMENT_METHOD', 'TRANSACTION_TYPE', 'TYPE'])
+    const sourceId   = get(['SOURCE_ID', 'PAYMENT_ID', 'ID'])
+
+    if (!fecha || isNaN(monto) || monto === 0) continue
+
+    movimientos.push({
+      id: `mp-rel-${sourceId || i}`,
+      fecha: fecha.slice(0, 10),
+      descripcion: `MP: ${descripcion}`,
+      monto: Math.abs(monto),
+      tipo: monto > 0 ? 'abono' : 'cargo',
+      glosa: 'Mercado Pago - Liberaciones',
+    })
+  }
+
+  return movimientos
+}
+
+// ── Helpers legacy (usados solo por el webhook) ───────────────────────────────
+
 function buildMovimientoFromPayment(payment, empresaId) {
   const fecha = payment.date_approved
     ? payment.date_approved.slice(0, 10)
@@ -53,57 +142,6 @@ function buildMovimientoFromPayment(payment, empresaId) {
     glosa: `Mercado Pago - ${payment.payment_type_id || ''}`,
     archivo_origen: 'mercadopago_webhook',
   }
-}
-
-// Descarga movimientos de /v1/account/movements/search para un rango de días.
-// Si el endpoint devuelve 404/error, hace fallback a /v1/payments/search.
-// Retorna { movimientos: [...], fuente: 'movements'|'payments' }
-async function fetchMovimientosRango(diasAtras) {
-  const now = new Date()
-  const desde = new Date(now.getTime() - diasAtras * 24 * 60 * 60 * 1000)
-  const beginDate = desde.toISOString()
-  const endDate = now.toISOString()
-
-  const movUrl = `https://api.mercadopago.com/v1/account/movements/search?limit=100&offset=0&begin_date=${encodeURIComponent(beginDate)}&end_date=${encodeURIComponent(endDate)}`
-  const movRes = await fetch(movUrl, {
-    headers: { Authorization: `Bearer ${MP_ACCESS_TOKEN}` },
-  })
-
-  if (movRes.ok) {
-    const body = await movRes.json()
-    const movimientos = (body.movements || body.results || []).filter(
-      m => m.status === 'approved' || m.status === 'settled'
-    )
-    return { movimientos, fuente: 'movements' }
-  }
-
-  // Fallback si movements/search no está disponible
-  console.log('[MP] movements/search no disponible, usando payments/search como fallback')
-  const payUrl = `https://api.mercadopago.com/v1/payments/search?range=date_created&begin_date=${encodeURIComponent(beginDate)}&end_date=${encodeURIComponent(endDate)}&status=approved&limit=100`
-  const payRes = await fetch(payUrl, {
-    headers: { Authorization: `Bearer ${MP_ACCESS_TOKEN}` },
-  })
-  if (!payRes.ok) {
-    const err = await payRes.json().catch(() => ({}))
-    throw new Error(`MP API error ${payRes.status}: ${err.message || ''}`)
-  }
-  const payBody = await payRes.json()
-  return { movimientos: payBody.results || [], fuente: 'payments' }
-}
-
-async function upsertMovimientos(movimientos, empresaId, fuente) {
-  let sincronizados = 0
-  for (const m of movimientos) {
-    const row = fuente === 'payments'
-      ? buildMovimientoFromPayment(m, empresaId)
-      : buildMovimientoFromMovement(m, empresaId)
-    const { error } = await supabase
-      .from('movimientos')
-      .upsert(row, { onConflict: 'id' })
-    if (error) console.error('[MP] upsert error:', error.message, row.id)
-    else sincronizados++
-  }
-  return sincronizados
 }
 
 async function intentarConciliacion(monto, empresaId) {
@@ -124,7 +162,7 @@ async function intentarConciliacion(monto, empresaId) {
   }
 }
 
-// POST /webhook — sin requireAuth, MP no manda JWT
+// ── POST /webhook — sin requireAuth, MP no manda JWT ─────────────────────────
 router.post('/webhook', async (req, res) => {
   res.sendStatus(200) // responder INMEDIATAMENTE
 
@@ -135,36 +173,59 @@ router.post('/webhook', async (req, res) => {
     const empresaId = await getEmpresaId()
     if (!empresaId) return
 
-    // Mini-sync de últimos 2 días para capturar transferencias además del pago notificado
-    const { movimientos, fuente } = await fetchMovimientosRango(2)
-    const sincronizados = await upsertMovimientos(movimientos, empresaId, fuente)
-    console.log(`[MP webhook] mini-sync: ${sincronizados} movimientos (fuente: ${fuente})`)
-
-    // Buscar conciliaciones posibles por el monto del pago notificado
     const payRes = await fetch(`https://api.mercadopago.com/v1/payments/${data.id}`, {
       headers: { Authorization: `Bearer ${MP_ACCESS_TOKEN}` },
     })
-    if (payRes.ok) {
-      const payment = await payRes.json()
-      if (payment.status === 'approved' && payment.transaction_amount) {
-        await intentarConciliacion(payment.transaction_amount, empresaId)
-      }
-    }
+    if (!payRes.ok) return
+
+    const payment = await payRes.json()
+    if (payment.status !== 'approved') return
+
+    const { error } = await supabase
+      .from('movimientos')
+      .upsert(buildMovimientoFromPayment(payment, empresaId), { onConflict: 'id' })
+
+    if (error) { console.error('[MP webhook] upsert error:', error.message); return }
+
+    await intentarConciliacion(payment.transaction_amount, empresaId)
   } catch (err) {
     console.error('[MP webhook] error:', err.message)
   }
 })
 
-// GET /sync — requiere auth
+// ── GET /sync — requiere auth ─────────────────────────────────────────────────
 router.get('/sync', requireAuth, async (req, res) => {
+  req.setTimeout(90000)
+  res.setTimeout(90000)
+
   try {
     const empresaId = await getEmpresaId()
     if (!empresaId) throw new Error('No se encontró empresa_id para la cuenta MP')
 
-    const { movimientos, fuente } = await fetchMovimientosRango(30)
-    const sincronizados = await upsertMovimientos(movimientos, empresaId, fuente)
+    const movimientos = await generarYDescargarReporte(30)
 
-    res.json({ data: { sincronizados, total: movimientos.length, fuente } })
+    let sincronizados = 0
+    for (const m of movimientos) {
+      const row = {
+        id: m.id,
+        empresa_id: empresaId,
+        fecha: m.fecha,
+        descripcion: m.descripcion,
+        tipo: m.tipo,
+        monto: m.monto,
+        conciliado: false,
+        cuenta_bancaria_id: MP_CUENTA_ID,
+        glosa: m.glosa,
+        archivo_origen: 'mercadopago_webhook',
+      }
+      const { error } = await supabase
+        .from('movimientos')
+        .upsert(row, { onConflict: 'id' })
+      if (error) console.error('[MP sync] upsert error:', error.message, row.id)
+      else sincronizados++
+    }
+
+    res.json({ data: { sincronizados, total: movimientos.length, fuente: 'release_report' } })
   } catch (err) {
     console.error('[MP sync] error:', err.message)
     res.status(500).json({ error: err.message })
