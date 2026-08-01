@@ -86,12 +86,16 @@ async function generarYDescargarReporte(diasAtras) {
 
 function parsearCSVMercadoPago(csvText) {
   const lineas = csvText.split('\n').filter(Boolean)
+  console.log('[MP CSV] primeras 3 líneas:', csvText.split('\n').slice(0, 3))
+  console.log('[MP CSV] total líneas:', csvText.split('\n').length)
   const headerIdx = lineas.findIndex(l =>
     l.toUpperCase().includes('DATE') || l.toUpperCase().includes('FECHA')
   )
+  console.log('[MP CSV] header encontrado en índice:', headerIdx)
   if (headerIdx < 0) return []
 
   const header = lineas[headerIdx].split(',').map(h => h.trim().replace(/"/g, '').toUpperCase())
+  console.log('[MP CSV] columnas del header:', header)
   const movimientos = []
 
   for (let i = headerIdx + 1; i < lineas.length; i++) {
@@ -123,6 +127,7 @@ function parsearCSVMercadoPago(csvText) {
     })
   }
 
+  console.log('[MP CSV] movimientos parseados:', movimientos.length)
   return movimientos
 }
 
