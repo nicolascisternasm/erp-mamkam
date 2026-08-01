@@ -29,10 +29,13 @@ async function generarYDescargarReporte(diasAtras) {
   const inicio = new Date(ahora)
   inicio.setDate(inicio.getDate() - diasAtras)
 
-  const begin_date = inicio.toISOString().replace(/\.\d{3}Z$/, '.000Z')
-  const end_date   = ahora.toISOString().replace(/\.\d{3}Z$/, '.000Z')
+  const pad = n => String(n).padStart(2, '0')
+  const formatMP = (d) => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}Z`
+  const begin_date = formatMP(inicio)
+  const end_date   = formatMP(ahora)
 
   // 1. Solicitar generación del reporte
+  console.log('[MP] Período:', begin_date, '→', end_date)
   console.log('[MP] Solicitando generación del reporte de liberaciones...')
   const genRes = await fetch('https://api.mercadopago.com/v1/account/release_report', {
     method: 'POST',
