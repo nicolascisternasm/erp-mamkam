@@ -1,8 +1,6 @@
 const forge = require('node-forge')
 const axios = require('axios')
 const { SignedXml } = require('xml-crypto')
-const tough = require('tough-cookie')
-const { wrapper } = require('axios-cookiejar-support')
 const crypto = require('crypto')
 
 const SII_AMBIENTE = 'https://palena.sii.cl' // producción
@@ -142,16 +140,16 @@ async function obtenerToken() {
 }
 
 async function loginWebSII(rut, clave) {
-  const cookieJar = new tough.CookieJar()
-  const axiosSession = wrapper(axios.create({ jar: cookieJar }))
-
-  await axiosSession.get('https://zeusr.sii.cl/AUT2000/InicioAutenticacion.html', {
+  const resp1 = await axios.get('https://zeusr.sii.cl/AUT2000/InicioAutenticacion.html', {
     headers: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      'Referer': 'https://www.sii.cl/',
+      'Accept': 'text/html,application/xhtml+xml',
     },
+    maxRedirects: 5,
   })
+
+  const cookies1 = (resp1.headers['set-cookie'] || []).join('; ')
+  console.log('[SII Login] cookies iniciales:', cookies1.substring(0, 100))
 
   const loginData = new URLSearchParams({
     rut,
@@ -160,7 +158,7 @@ async function loginWebSII(rut, clave) {
     referencia: 'https://www4.sii.cl/consdcvinternetui/#/index',
   })
 
-  const loginResponse = await axiosSession.post(
+  const resp2 = await axios.post(
     'https://herculesr.sii.cl/cgi_AUT2000/autInicio.cgi',
     loginData.toString(),
     {
@@ -169,36 +167,41 @@ async function loginWebSII(rut, clave) {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         'Referer': 'https://zeusr.sii.cl/AUT2000/InicioAutenticacion.html',
         'Origin': 'https://zeusr.sii.cl',
+        'Cookie': cookies1,
       },
       maxRedirects: 5,
+      validateStatus: s => s < 500,
     }
   )
 
-  console.log('[SII Login] status:', loginResponse.status)
+  const cookies2 = [cookies1, ...(resp2.headers['set-cookie'] || [])].join('; ')
+  console.log('[SII Login] status login:', resp2.status)
+  console.log('[SII Login] cookies tras login:', cookies2.substring(0, 200))
 
-  await axiosSession.get('https://www4.sii.cl/consdcvinternetui/#/index', {
+  const resp3 = await axios.get('https://www4.sii.cl/consdcvinternetui/', {
     headers: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      'Cookie': cookies2,
       'Referer': 'https://www.sii.cl/',
     },
+    maxRedirects: 5,
+    validateStatus: s => s < 500,
   })
 
-  return { axiosSession, cookieJar }
+  const cookiesFinal = [cookies2, ...(resp3.headers['set-cookie'] || [])].join('; ')
+  console.log('[SII Login] cookies finales:', cookiesFinal.substring(0, 300))
+  return cookiesFinal
 }
 
 async function consultarRCV(rut, dv, periodo, tipo = 'COMPRA') {
   const token = await obtenerToken()
 
   const claveSII = process.env.SII_CLAVE
-  const { axiosSession } = await loginWebSII(rut, claveSII)
-
-  await axiosSession.get(
-    'https://www4.sii.cl/consdcvinternetui/services/data/facadeService/getResumen'
-  ).catch(() => {})
+  const cookiesStr = await loginWebSII(rut, claveSII)
 
   const transactionId = crypto.randomUUID()
 
-  const response = await axiosSession.post(
+  const response = await axios.post(
     'https://www4.sii.cl/consdcvinternetui/services/data/facadeService/getResumen',
     {
       metaData: {
@@ -223,7 +226,7 @@ async function consultarRCV(rut, dv, periodo, tipo = 'COMPRA') {
         'Origin': 'https://www4.sii.cl',
         'Referer': 'https://www4.sii.cl/consdcvinternetui/',
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Cookie': `TOKEN=${token}; CSESSIONID=${token}`,
+        'Cookie': `${cookiesStr}; TOKEN=${token}; CSESSIONID=${token}`,
       },
     }
   )
