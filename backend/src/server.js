@@ -63,7 +63,7 @@ const mercadoPagoRoutes      = require('./routes/mercadopago.js')
 const { requireAuth }        = require('./middleware/auth.js')
 
 const app = express()
-const PORT = process.env.PORT || 4000
+const HTTP_PORT = process.env.PORT || 8080
 
 const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:3000').split(',').map(s => s.trim())
 app.use(cors({
@@ -111,6 +111,6 @@ app.use((err, req, res, _next) => {
   res.status(500).json({ error: 'Error interno del servidor' })
 })
 
-app.listen(PORT, () => {
-  console.log(`🚀 ERP MAMKAM API corriendo en http://localhost:${PORT}`)
+app.listen(HTTP_PORT, () => {
+  console.log(`🚀 ERP MAMKAM API corriendo en http://localhost:${HTTP_PORT}`)
 })
