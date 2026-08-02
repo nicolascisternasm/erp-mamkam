@@ -5,11 +5,25 @@ const SII_AMBIENTE = 'https://palena.sii.cl' // producción
 // const SII_AMBIENTE = 'https://maullin.sii.cl' // certificación
 
 async function obtenerSemilla() {
-  const url = `${SII_AMBIENTE}/DTEWS/CrSeed.jws`
-  const response = await axios.get(url)
+  const url = 'https://palena.sii.cl/DTEWS/CrSeed.jws'
+  const soapEnvelope = `<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+  <soapenv:Body>
+    <getSeed/>
+  </soapenv:Body>
+</soapenv:Envelope>`
+
+  const response = await axios.post(url, soapEnvelope, {
+    headers: {
+      'Content-Type': 'text/xml; charset=utf-8',
+      'SOAPAction': '',
+    },
+  })
+
   console.log('[SII] Respuesta semilla status:', response.status)
-  console.log('[SII] Respuesta semilla data:', response.data)
-  const match = response.data.match(/<SEMILLA>(\d+)<\/SEMILLA>/)
+  console.log('[SII] Respuesta semilla data:', response.data.substring(0, 500))
+
+  const match = response.data.match(/<(?:SII:)?SEMILLA>(\d+)<\/(?:SII:)?SEMILLA>/)
   if (!match) throw new Error('No se pudo obtener semilla del SII')
   return match[1]
 }
@@ -77,17 +91,28 @@ async function obtenerToken() {
 
   const xmlFirmado = await firmarSemilla(semilla)
 
-  const url = `${SII_AMBIENTE}/DTEWS/GetTokenFromSeed.jws`
-  const response = await axios.post(url, xmlFirmado, {
-    headers: { 'Content-Type': 'text/xml; charset=utf-8' },
+  const url = 'https://palena.sii.cl/DTEWS/GetTokenFromSeed.jws'
+  const soapEnvelope = `<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+  <soapenv:Body>
+    <getToken>
+      <pszXml>${xmlFirmado.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pszXml>
+    </getToken>
+  </soapenv:Body>
+</soapenv:Envelope>`
+
+  const response = await axios.post(url, soapEnvelope, {
+    headers: {
+      'Content-Type': 'text/xml; charset=utf-8',
+      'SOAPAction': '',
+    },
   })
 
   console.log('[SII] Respuesta token status:', response.status)
-  console.log('[SII] Respuesta token data:', response.data)
-  const match = response.data.match(/<TOKEN>([^<]+)<\/TOKEN>/)
-  if (!match) {
-    throw new Error('No se pudo obtener token del SII')
-  }
+  console.log('[SII] Respuesta token data:', response.data.substring(0, 500))
+
+  const match = response.data.match(/<(?:SII:)?TOKEN>([^<]+)<\/(?:SII:)?TOKEN>/)
+  if (!match) throw new Error('No se pudo obtener token del SII')
 
   console.log('[SII] Token obtenido exitosamente')
   return match[1]
