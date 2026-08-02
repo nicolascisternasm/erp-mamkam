@@ -138,25 +138,42 @@ async function obtenerToken() {
   return match[1]
 }
 
-async function consultarRCV(rut, periodo, tipo = 'COMPRA') {
-  // rut: '78348727' (sin dígito verificador ni puntos)
+async function consultarRCV(rut, dv, periodo, tipo = 'COMPRA') {
+  // rut: '78348727' (sin puntos, sin DV)
+  // dv: '6'
   // periodo: '202407' (YYYYMM)
   // tipo: 'COMPRA' o 'VENTA'
 
   const token = await obtenerToken()
 
-  const url = `${SII_AMBIENTE}/cgi_dte/UF_SerachEngine.cgi`
+  const anio = periodo.substring(0, 4)
+  const mes  = periodo.substring(4, 6)
+
+  const url = 'https://palena.sii.cl/cgi_dte/UF_SerachEngine.cgi'
   const params = new URLSearchParams({
-    rutEmisor: rut,
-    dvEmisor: '6',
-    periodoTributario: periodo,
-    tipoDte: '0',
-    token,
+    rutContribuyente: rut,
+    dvContribuyente:  dv,
+    periodo:          `${anio}${mes}`,
+    tipoOp:           tipo,
+    tipoDoc:          '0',
+    codigoDoc:        '',
+    modoSeleccionBusqueda: '2',
   })
 
   const response = await axios.get(`${url}?${params}`, {
-    headers: { Cookie: `TOKEN=${token}` },
+    headers: {
+      'Cookie':      `TOKEN=${token}`,
+      'User-Agent':  'Mozilla/5.0',
+      'Accept':      'application/json, text/plain, */*',
+    },
   })
+
+  console.log('[SII RCV] status:', response.status)
+  console.log('[SII RCV] respuesta (primeros 500):',
+    typeof response.data === 'string'
+      ? response.data.substring(0, 500)
+      : JSON.stringify(response.data).substring(0, 500)
+  )
 
   return response.data
 }

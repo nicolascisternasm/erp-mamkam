@@ -23,7 +23,8 @@ router.get('/rcv', requireAuth, async (req, res) => {
     if (!periodo) return res.status(400).json({ error: { message: 'periodo requerido (ej: 202407)' } })
 
     const rut = process.env.SII_RUT || '78348727'
-    const data = await consultarRCV(rut, periodo, tipo)
+    const dv  = process.env.SII_DV  || '6'
+    const data = await consultarRCV(rut, dv, periodo, tipo)
     res.json({ data })
   } catch (err) {
     console.error('[SII] Error RCV:', err.message)
