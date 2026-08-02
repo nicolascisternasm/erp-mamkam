@@ -8,6 +8,29 @@ process.on('unhandledRejection', (reason) => {
 const path = require('path')
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') })
 
+// Generar host key para SFTP si no existe
+const fs = require('fs')
+const { execSync } = require('child_process')
+if (!fs.existsSync('/tmp/host.key')) {
+  try {
+    execSync('ssh-keygen -t rsa -b 2048 -f /tmp/host.key -N ""')
+    console.log('[SFTP] Host key generada')
+  } catch (e) {
+    console.error('[SFTP] Error generando host key:', e.message)
+  }
+}
+
+// Iniciar servidor SFTP
+const { iniciarSFTPServer } = require('./sftp-server')
+const mpRoutes = require('./routes/mercadopago')
+
+iniciarSFTPServer(async (fileName, csvText) => {
+  console.log(`[SFTP] Procesando reporte: ${fileName}`)
+  const movimientos = mpRoutes.parsearBankReportCSV(csvText)
+  const procesados  = await mpRoutes.procesarMovimientosMP(movimientos)
+  console.log(`[SFTP] ${procesados} movimientos procesados desde ${fileName}`)
+})
+
 const express = require('express')
 const cors = require('cors')
 const authRoutes = require('./routes/auth.js')

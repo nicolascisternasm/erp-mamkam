@@ -281,30 +281,7 @@ router.post('/report-webhook', async (req, res) => {
     }
 
     const movimientos = parsearBankReportCSV(csvText)
-    const empresaId   = await getEmpresaId()
-    if (!empresaId) return
-
-    let procesados = 0
-    for (const m of movimientos) {
-      const row = {
-        id: m.id,
-        empresa_id: empresaId,
-        fecha: m.fecha,
-        descripcion: m.descripcion,
-        tipo: m.tipo,
-        monto: m.monto,
-        conciliado: false,
-        cuenta_bancaria_id: MP_CUENTA_ID,
-        glosa: m.glosa,
-        archivo_origen: 'mercadopago_webhook',
-      }
-      const { error } = await supabase
-        .from('movimientos')
-        .upsert(row, { onConflict: 'id' })
-      if (error) console.error('[MP report-webhook] upsert error:', error.message, row.id)
-      else procesados++
-    }
-
+    const procesados  = await procesarMovimientosMP(movimientos)
     console.log(`[MP report-webhook] procesados ${procesados} movimientos de ${fileName}`)
   } catch (err) {
     console.error('[MP report-webhook] error:', err.message)
@@ -362,38 +339,42 @@ router.post('/webhook', async (req, res) => {
   }
 })
 
+// ── Reutilizable: insertar movimientos parseados en Supabase ──────────────────
+async function procesarMovimientosMP(movimientos) {
+  const empresaId = await getEmpresaId()
+  if (!empresaId) throw new Error('No se encontró empresa_id para la cuenta MP')
+
+  let sincronizados = 0
+  for (const m of movimientos) {
+    const row = {
+      id: m.id,
+      empresa_id: empresaId,
+      fecha: m.fecha,
+      descripcion: m.descripcion,
+      tipo: m.tipo,
+      monto: m.monto,
+      conciliado: false,
+      cuenta_bancaria_id: MP_CUENTA_ID,
+      glosa: m.glosa,
+      archivo_origen: 'mercadopago_webhook',
+    }
+    const { error } = await supabase
+      .from('movimientos')
+      .upsert(row, { onConflict: 'id' })
+    if (error) console.error('[MP] upsert error:', error.message, row.id)
+    else sincronizados++
+  }
+  return sincronizados
+}
+
 // ── GET /sync — requiere auth ─────────────────────────────────────────────────
 router.get('/sync', requireAuth, async (req, res) => {
   req.setTimeout(90000)
   res.setTimeout(90000)
 
   try {
-    const empresaId = await getEmpresaId()
-    if (!empresaId) throw new Error('No se encontró empresa_id para la cuenta MP')
-
     const movimientos = await obtenerUltimoBankReport(30)
-
-    let sincronizados = 0
-    for (const m of movimientos) {
-      const row = {
-        id: m.id,
-        empresa_id: empresaId,
-        fecha: m.fecha,
-        descripcion: m.descripcion,
-        tipo: m.tipo,
-        monto: m.monto,
-        conciliado: false,
-        cuenta_bancaria_id: MP_CUENTA_ID,
-        glosa: m.glosa,
-        archivo_origen: 'mercadopago_webhook',
-      }
-      const { error } = await supabase
-        .from('movimientos')
-        .upsert(row, { onConflict: 'id' })
-      if (error) console.error('[MP sync] upsert error:', error.message, row.id)
-      else sincronizados++
-    }
-
+    const sincronizados = await procesarMovimientosMP(movimientos)
     res.json({ data: { sincronizados, total: movimientos.length, fuente: 'bank_report' } })
   } catch (err) {
     console.error('[MP sync] error:', err.message)
@@ -402,3 +383,5 @@ router.get('/sync', requireAuth, async (req, res) => {
 })
 
 module.exports = router
+module.exports.parsearBankReportCSV = parsearBankReportCSV
+module.exports.procesarMovimientosMP = procesarMovimientosMP
