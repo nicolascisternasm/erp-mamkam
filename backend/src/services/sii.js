@@ -57,9 +57,9 @@ async function firmarSemilla(semilla) {
   const certPem = forge.pki.certificateToPem(certificate)
 
   const certBase64 = certPem
-    .replace('-----BEGIN CERTIFICATE-----', '')
-    .replace('-----END CERTIFICATE-----', '')
-    .replace(/\n/g, '')
+    .split('\n')
+    .filter(line => !line.startsWith('-----'))
+    .join('')
     .trim()
 
   const xmlToSign = `<getToken><item><Semilla>${semilla}</Semilla></item></getToken>`
@@ -84,7 +84,10 @@ async function firmarSemilla(semilla) {
   }
 
   sig.computeSignature(xmlToSign)
-  const xmlFirmado = sig.getSignedXml()
+  let xmlFirmado = sig.getSignedXml()
+
+  const keyInfo = `<KeyInfo><X509Data><X509Certificate>${certBase64}</X509Certificate></X509Data></KeyInfo>`
+  xmlFirmado = xmlFirmado.replace('</Signature>', `${keyInfo}</Signature>`)
 
   console.log('[SII] XML firmado completo:', xmlFirmado)
   return xmlFirmado
