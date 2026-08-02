@@ -1,5 +1,6 @@
 const forge = require('node-forge')
 const axios = require('axios')
+const { SignedXml } = require('xml-crypto')
 
 const SII_AMBIENTE = 'https://palena.sii.cl' // producción
 // const SII_AMBIENTE = 'https://maullin.sii.cl' // certificación
@@ -49,47 +50,40 @@ async function firmarSemilla(semilla) {
   const keyBags = p12.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag })
   const certBags = p12.getBags({ bagType: forge.pki.oids.certBag })
 
-  const privateKey = keyBags[forge.pki.oids.pkcs8ShroudedKeyBag][0].key
+  const privateKeyObj = keyBags[forge.pki.oids.pkcs8ShroudedKeyBag][0].key
   const certificate = certBags[forge.pki.oids.certBag][0].cert
 
-  const xmlToSign = `<?xml version="1.0"?>
-<getToken>
-  <item>
-    <Semilla>${semilla}</Semilla>
-  </item>
-</getToken>`
+  const privateKeyPem = forge.pki.privateKeyToPem(privateKeyObj)
+  const certPem = forge.pki.certificateToPem(certificate)
 
-  const md = forge.md.sha1.create()
-  md.update(xmlToSign, 'utf8')
-  const signature = forge.util.encode64(privateKey.sign(md))
+  const certBase64 = certPem
+    .replace('-----BEGIN CERTIFICATE-----', '')
+    .replace('-----END CERTIFICATE-----', '')
+    .replace(/\n/g, '')
+    .trim()
 
-  const certDer = forge.asn1.toDer(forge.pki.certificateToAsn1(certificate)).getBytes()
-  const certBase64 = forge.util.encode64(certDer)
+  const xmlToSign = `<getToken><item><Semilla>${semilla}</Semilla></item></getToken>`
 
-  const xmlFirmado = `<?xml version="1.0"?>
-<getToken>
-  <item>
-    <Semilla>${semilla}</Semilla>
-  </item>
-  <Signature xmlns="http://www.w3.org/2000/09/xmldsig#">
-    <SignedInfo>
-      <CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>
-      <SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"/>
-      <Reference URI="">
-        <DigestMethod Algorithm="http://www.w3.org/2000/09/xmldsig#sha1"/>
-        <DigestValue>${signature}</DigestValue>
-      </Reference>
-    </SignedInfo>
-    <SignatureValue>${signature}</SignatureValue>
-    <KeyInfo>
-      <X509Data>
-        <X509Certificate>${certBase64}</X509Certificate>
-      </X509Data>
-    </KeyInfo>
-  </Signature>
-</getToken>`
+  const sig = new SignedXml()
+  sig.signingKey = privateKeyPem
+  sig.addReference(
+    '/getToken',
+    [
+      'http://www.w3.org/2000/09/xmldsig#enveloped-signature',
+      'http://www.w3.org/TR/2001/REC-xml-c14n-20010315',
+    ],
+    'http://www.w3.org/2000/09/xmldsig#sha1'
+  )
+  sig.signatureAlgorithm = 'http://www.w3.org/2000/09/xmldsig#rsa-sha1'
+  sig.canonicalizationAlgorithm = 'http://www.w3.org/TR/2001/REC-xml-c14n-20010315'
+  sig.keyInfoProvider = {
+    getKeyInfo: () => `<X509Data><X509Certificate>${certBase64}</X509Certificate></X509Data>`,
+  }
 
-  console.log('[SII] XML a firmar (primeros 200 chars):', xmlFirmado.substring(0, 200))
+  sig.computeSignature(xmlToSign)
+  const xmlFirmado = sig.getSignedXml()
+
+  console.log('[SII] XML firmado (primeros 300):', xmlFirmado.substring(0, 300))
   return xmlFirmado
 }
 
