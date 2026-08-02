@@ -119,8 +119,20 @@ async function obtenerToken() {
   console.log('[SII] Respuesta token status:', response.status)
   console.log('[SII] Respuesta token data:', response.data.substring(0, 500))
 
-  const match = response.data.match(/<(?:SII:)?TOKEN>([^<]+)<\/(?:SII:)?TOKEN>/)
-  if (!match) throw new Error('No se pudo obtener token del SII')
+  const rawTokenXml = response.data
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&')
+
+  console.log('[SII] Token XML desescapado:', rawTokenXml.substring(0, 500))
+
+  const match = rawTokenXml.match(/<(?:SII:)?TOKEN>([^<]+)<\/(?:SII:)?TOKEN>/)
+  if (!match) {
+    const errorMatch = rawTokenXml.match(/<(?:SII:)?DESCRIPCION>([^<]+)<\/(?:SII:)?DESCRIPCION>/)
+    const errorDesc = errorMatch ? errorMatch[1] : 'sin descripción'
+    throw new Error(`SII rechazó el token: ${errorDesc}`)
+  }
 
   console.log('[SII] Token obtenido exitosamente')
   return match[1]
