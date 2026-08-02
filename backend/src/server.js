@@ -10,11 +10,15 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env') })
 
 // Generar host key para SFTP si no existe
 const fs = require('fs')
-const { execSync } = require('child_process')
 if (!fs.existsSync('/tmp/host.key')) {
   try {
-    execSync('ssh-keygen -t rsa -b 2048 -f /tmp/host.key -N ""')
-    console.log('[SFTP] Host key generada')
+    const { generateKeyPairSync } = require('crypto')
+    const { privateKey } = generateKeyPairSync('rsa', {
+      modulusLength: 2048,
+      privateKeyEncoding: { type: 'pkcs1', format: 'pem' },
+    })
+    fs.writeFileSync('/tmp/host.key', privateKey)
+    console.log('[SFTP] Host key RSA generada con crypto')
   } catch (e) {
     console.error('[SFTP] Error generando host key:', e.message)
   }
