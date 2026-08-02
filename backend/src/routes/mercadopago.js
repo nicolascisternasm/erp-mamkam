@@ -16,9 +16,34 @@ async function getEmpresaId() {
   return data?.empresa_id
 }
 
-// ── Reporte de Liberaciones ───────────────────────────────────────────────────
+// ── Bank Report ───────────────────────────────────────────────────────────────
 
-async function generarYDescargarReporte(diasAtras) {
+async function obtenerUltimoBankReport(diasAtras) {
+  const TOKEN = process.env.MP_ACCESS_TOKEN
+  const headers = { 'Authorization': `Bearer ${TOKEN}` }
+
+  const listRes = await fetch('https://api.mercadopago.com/v1/account/bank_report/list', { headers })
+  if (!listRes.ok) throw new Error('Error listando bank_reports de MP')
+  const lista = await listRes.json()
+
+  if (!Array.isArray(lista) || lista.length === 0) {
+    console.log('[MP] No hay bank_reports, generando uno nuevo...')
+    return await generarYDescargarBankReport(diasAtras)
+  }
+
+  const reciente = lista.sort((a, b) => new Date(b.date_created) - new Date(a.date_created))[0]
+  console.log('[MP] Usando bank_report:', reciente.file_name)
+
+  const csvRes = await fetch(
+    `https://api.mercadopago.com/v1/account/bank_report/${reciente.file_name}`,
+    { headers }
+  )
+  if (!csvRes.ok) throw new Error('Error descargando bank_report CSV')
+  const csvText = await csvRes.text()
+  return parsearBankReportCSV(csvText)
+}
+
+async function generarYDescargarBankReport(diasAtras) {
   const TOKEN = process.env.MP_ACCESS_TOKEN
   const headers = {
     'Authorization': `Bearer ${TOKEN}`,
@@ -34,10 +59,9 @@ async function generarYDescargarReporte(diasAtras) {
   const begin_date = formatMP(inicio)
   const end_date   = formatMP(ahora)
 
-  // 1. Solicitar generación del reporte
-  console.log('[MP] Período:', begin_date, '→', end_date)
-  console.log('[MP] Solicitando generación del reporte de liberaciones...')
-  const genRes = await fetch('https://api.mercadopago.com/v1/account/release_report', {
+  console.log('[MP] Generando bank_report para:', begin_date, '→', end_date)
+
+  const genRes = await fetch('https://api.mercadopago.com/v1/account/bank_report', {
     method: 'POST',
     headers,
     body: JSON.stringify({ begin_date, end_date }),
@@ -45,88 +69,88 @@ async function generarYDescargarReporte(diasAtras) {
 
   if (!genRes.ok) {
     const err = await genRes.text()
-    console.error('[MP] Error generando reporte:', err)
-    throw new Error('Error generando reporte de MP')
+    throw new Error(`Error generando bank_report: ${err}`)
   }
 
   const genData = await genRes.json()
-  console.log('[MP] Reporte solicitado:', genData.file_name || 'pendiente')
-
-  // 2. Polling hasta que el reporte esté listo (máx 60 seg)
   let fileName = genData.file_name
+
   if (!fileName) {
     for (let i = 0; i < 12; i++) {
       await new Promise(r => setTimeout(r, 5000))
-      const listRes = await fetch('https://api.mercadopago.com/v1/account/release_report/list', {
-        headers: { 'Authorization': `Bearer ${TOKEN}` },
-      })
+      const listRes = await fetch(
+        'https://api.mercadopago.com/v1/account/bank_report/list',
+        { headers: { 'Authorization': `Bearer ${TOKEN}` } }
+      )
       const lista = await listRes.json()
       const reciente = Array.isArray(lista)
-        ? lista.find(r => new Date(r.date_created) >= new Date(begin_date))
+        ? lista.sort((a, b) => new Date(b.date_created) - new Date(a.date_created))[0]
         : null
       if (reciente?.file_name) {
         fileName = reciente.file_name
-        console.log('[MP] Reporte listo:', fileName)
+        console.log('[MP] bank_report listo:', fileName)
         break
       }
     }
   }
 
-  if (!fileName) throw new Error('Timeout esperando reporte de MP')
+  if (!fileName) throw new Error('Timeout esperando bank_report de MP')
 
-  // 3. Descargar el CSV
-  const csvRes = await fetch(`https://api.mercadopago.com/v1/account/release_report/${fileName}`, {
-    headers: { 'Authorization': `Bearer ${TOKEN}` },
-  })
-  if (!csvRes.ok) throw new Error('Error descargando CSV de MP')
-
+  const csvRes = await fetch(
+    `https://api.mercadopago.com/v1/account/bank_report/${fileName}`,
+    { headers: { 'Authorization': `Bearer ${TOKEN}` } }
+  )
+  if (!csvRes.ok) throw new Error('Error descargando CSV del bank_report')
   const csvText = await csvRes.text()
-  return parsearCSVMercadoPago(csvText)
+  return parsearBankReportCSV(csvText)
 }
 
-function parsearCSVMercadoPago(csvText) {
-  const lineas = csvText.split('\n').filter(Boolean)
-  const headerIdx = lineas.findIndex(l =>
-    l.toUpperCase().includes('DATE') || l.toUpperCase().includes('FECHA')
-  )
-  if (headerIdx < 0) return []
+function parsearBankReportCSV(csvText) {
+  const lineas = csvText.split('\n').filter(l => l.trim())
+  if (lineas.length < 2) return []
 
-  const sep = lineas[headerIdx].includes(';') ? ';' : ','
-  const header = lineas[headerIdx].split(sep).map(h => h.trim().replace(/"/g, '').toUpperCase())
+  const sep = lineas[0].includes(';') ? ';' : ','
+  const header = lineas[0].split(sep).map(h => h.trim().replace(/"/g, '').toUpperCase())
+
+  console.log('[MP bank_report] columnas:', header)
+  console.log('[MP bank_report] filas de datos:', lineas.length - 1)
+
   const movimientos = []
 
-  for (let i = headerIdx + 1; i < lineas.length; i++) {
+  for (let i = 1; i < lineas.length; i++) {
     const cols = lineas[i].split(sep).map(c => c.trim().replace(/"/g, ''))
-    if (cols.length < 3) continue
 
-    const get = (keys) => {
-      for (const k of keys) {
-        const idx = header.findIndex(h => h.includes(k))
-        if (idx >= 0) return cols[idx] || ''
-      }
-      return ''
+    const get = (key) => {
+      const idx = header.indexOf(key)
+      return idx >= 0 ? (cols[idx] || '') : ''
     }
 
-    const fecha       = get(['DATE', 'FECHA', 'DATE_CREATED'])
-    const credito     = parseFloat(get(['NET_CREDIT_AMOUNT']) || '0')
-    const debito      = parseFloat(get(['NET_DEBIT_AMOUNT']) || '0')
-    const monto       = credito > 0 ? credito : -debito
-    const tipo        = credito > 0 ? 'abono' : 'cargo'
-    const descripcion = get(['DESCRIPTION', 'PAYMENT_METHOD', 'TRANSACTION_TYPE', 'TYPE'])
-    const sourceId    = get(['SOURCE_ID', 'PAYMENT_ID', 'ID'])
+    const sourceId      = get('SOURCE_ID')
+    const transAmount   = parseFloat(get('TRANSACTION_AMOUNT') || get('REAL_AMOUNT') || '0')
+    const fecha         = get('TRANSACTION_DATE') || get('SETTLEMENT_DATE')
+    const paymentMethod = get('PAYMENT_METHOD_TYPE')
+    const transType     = get('TRANSACTION_TYPE')
+    const feeAmount     = parseFloat(get('FEE_AMOUNT') || '0')
 
-    if (!fecha || isNaN(monto) || monto === 0) continue
+    if (!fecha || isNaN(transAmount) || transAmount === 0) continue
+
+    let descripcion = `MP: ${transType}`
+    if (paymentMethod === 'bank_transfer')    descripcion = 'MP: Transferencia bancaria'
+    else if (paymentMethod === 'credit_card') descripcion = 'MP: Pago tarjeta crédito'
+    else if (paymentMethod === 'debit_card')  descripcion = 'MP: Pago tarjeta débito'
+    else if (paymentMethod === 'available_money') descripcion = 'MP: Movimiento cuenta'
 
     movimientos.push({
-      id: `mp-rel-${sourceId || i}`,
+      id: `mp-bank-${sourceId || i}`,
       fecha: fecha.slice(0, 10),
-      descripcion: `MP: ${descripcion}`,
-      monto: Math.abs(monto),
-      tipo,
-      glosa: 'Mercado Pago - Liberaciones',
+      descripcion,
+      monto: Math.abs(transAmount),
+      tipo: transAmount > 0 ? 'abono' : 'cargo',
+      glosa: `MP ${paymentMethod}${feeAmount !== 0 ? ` | comisión: $${Math.abs(feeAmount)}` : ''}`.trim(),
     })
   }
 
+  console.log('[MP bank_report] movimientos parseados:', movimientos.length)
   return movimientos
 }
 
@@ -169,6 +193,26 @@ async function intentarConciliacion(monto, empresaId) {
   }
 }
 
+// ── GET /setup — activa reporte diario automático (llamar una vez) ────────────
+router.get('/setup', requireAuth, async (req, res) => {
+  try {
+    const setupRes = await fetch('https://api.mercadopago.com/v1/account/bank_report/config', {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${MP_ACCESS_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ scheduled: true, frequency: { hour: 6, type: 'daily' } }),
+    })
+    const config = await setupRes.json()
+    if (!setupRes.ok) throw new Error(config.message || `MP error ${setupRes.status}`)
+    res.json({ data: { ok: true, config } })
+  } catch (err) {
+    console.error('[MP setup] error:', err.message)
+    res.status(500).json({ error: err.message })
+  }
+})
+
 // ── POST /webhook — sin requireAuth, MP no manda JWT ─────────────────────────
 router.post('/webhook', async (req, res) => {
   res.sendStatus(200) // responder INMEDIATAMENTE
@@ -209,7 +253,7 @@ router.get('/sync', requireAuth, async (req, res) => {
     const empresaId = await getEmpresaId()
     if (!empresaId) throw new Error('No se encontró empresa_id para la cuenta MP')
 
-    const movimientos = await generarYDescargarReporte(30)
+    const movimientos = await obtenerUltimoBankReport(30)
 
     let sincronizados = 0
     for (const m of movimientos) {
@@ -232,7 +276,7 @@ router.get('/sync', requireAuth, async (req, res) => {
       else sincronizados++
     }
 
-    res.json({ data: { sincronizados, total: movimientos.length, fuente: 'release_report' } })
+    res.json({ data: { sincronizados, total: movimientos.length, fuente: 'bank_report' } })
   } catch (err) {
     console.error('[MP sync] error:', err.message)
     res.status(500).json({ error: err.message })
