@@ -1045,6 +1045,14 @@ function TabIntegraciones() {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy]       = useState(false)
 
+  // SII
+  const [siiEstado,      setSiiEstado]      = useState(null)   // { conectado, ultimo_login }
+  const [siiLoadingEst,  setSiiLoadingEst]  = useState(true)
+  const [siiClave,       setSiiClave]       = useState('')
+  const [siiShowClave,   setSiiShowClave]   = useState(false)
+  const [siiConectando,  setSiiConectando]  = useState(false)
+  const [siiError,       setSiiError]       = useState(null)
+
   const cargar = async () => {
     setLoading(true)
     try {
@@ -1053,7 +1061,17 @@ function TabIntegraciones() {
     } catch { /* deja la lista vacía */ }
     finally { setLoading(false) }
   }
-  useEffect(() => { cargar() }, [])
+
+  const cargarEstadoSII = async () => {
+    setSiiLoadingEst(true)
+    try {
+      const data = await apiClient.get('/sii/estado')
+      setSiiEstado(data)
+    } catch { setSiiEstado({ conectado: false, ultimo_login: null }) }
+    finally { setSiiLoadingEst(false) }
+  }
+
+  useEffect(() => { cargar(); cargarEstadoSII() }, [])
 
   const meta = integraciones.find(i => i.proveedor === 'meta')
 
@@ -1077,60 +1095,155 @@ function TabIntegraciones() {
     finally { setBusy(false) }
   }
 
+  const conectarSII = async () => {
+    if (!siiClave.trim()) return
+    setSiiConectando(true)
+    setSiiError(null)
+    try {
+      await apiClient.post('/sii/login', { clave: siiClave })
+      setSiiClave('')
+      await cargarEstadoSII()
+    } catch (err) {
+      setSiiError(err.message || 'Error al conectar con el SII')
+    } finally {
+      setSiiConectando(false)
+    }
+  }
+
   const tokenVigente = meta?.tokenExpiresAt ? new Date(meta.tokenExpiresAt) > new Date() : null
 
   return (
-    <div className="card p-6 max-w-xl space-y-4">
-      <div className="flex items-center gap-3">
-        <div className="w-11 h-11 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0">
-          <Facebook className="w-6 h-6 text-blue-600" />
+    <div className="space-y-4 max-w-xl">
+      {/* ── Tarjeta Meta / Facebook ── */}
+      <div className="card p-6 space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="w-11 h-11 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0">
+            <Facebook className="w-6 h-6 text-blue-600" />
+          </div>
+          <div>
+            <h3 className="text-base font-semibold text-slate-900">Meta / Facebook</h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Conecta tu página para recibir automáticamente los leads de Facebook Lead Ads.
+            </p>
+          </div>
         </div>
-        <div>
-          <h3 className="text-base font-semibold text-slate-900">Meta / Facebook</h3>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Conecta tu página para recibir automáticamente los leads de Facebook Lead Ads.
-          </p>
-        </div>
+
+        {loading ? (
+          <div className="flex justify-center py-6"><RefreshCw className="w-5 h-5 text-slate-300 animate-spin" /></div>
+        ) : meta ? (
+          <>
+            <div className="bg-slate-50 rounded-lg p-4 space-y-2">
+              <div className="flex items-center gap-2 text-sm">
+                <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+                <span className="font-medium text-slate-800">Página conectada:</span>
+                <span className="text-slate-700">{meta.pageName || meta.pageId}</span>
+              </div>
+              <div className="text-xs text-slate-500 pl-6">
+                Estado del token:{' '}
+                {meta.tokenExpiresAt
+                  ? (tokenVigente
+                      ? <span className="text-emerald-600 font-medium">Vigente hasta {new Date(meta.tokenExpiresAt).toLocaleDateString('es-CL')}</span>
+                      : <span className="text-red-600 font-medium">Expirado — vuelve a conectar</span>)
+                  : <span className="text-slate-500">Activo (sin fecha de expiración)</span>}
+              </div>
+            </div>
+            <button
+              onClick={desconectar}
+              disabled={busy}
+              className="btn-secondary text-sm text-red-600 hover:text-red-700 disabled:opacity-50"
+            >
+              {busy ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Unplug className="w-4 h-4" />}
+              Desconectar
+            </button>
+          </>
+        ) : (
+          <button
+            onClick={conectar}
+            className="btn-primary w-full justify-center"
+            style={{ backgroundColor: '#1877F2' }}
+          >
+            <Facebook className="w-4 h-4" />
+            Conectar con Facebook
+          </button>
+        )}
       </div>
 
-      {loading ? (
-        <div className="flex justify-center py-6"><RefreshCw className="w-5 h-5 text-slate-300 animate-spin" /></div>
-      ) : meta ? (
-        <>
-          <div className="bg-slate-50 rounded-lg p-4 space-y-2">
-            <div className="flex items-center gap-2 text-sm">
-              <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-              <span className="font-medium text-slate-800">Página conectada:</span>
-              <span className="text-slate-700">{meta.pageName || meta.pageId}</span>
-            </div>
-            <div className="text-xs text-slate-500 pl-6">
-              Estado del token:{' '}
-              {meta.tokenExpiresAt
-                ? (tokenVigente
-                    ? <span className="text-emerald-600 font-medium">Vigente hasta {new Date(meta.tokenExpiresAt).toLocaleDateString('es-CL')}</span>
-                    : <span className="text-red-600 font-medium">Expirado — vuelve a conectar</span>)
-                : <span className="text-slate-500">Activo (sin fecha de expiración)</span>}
-            </div>
+      {/* ── Tarjeta SII ── */}
+      <div className="card p-6 space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="w-11 h-11 rounded-xl bg-red-50 flex items-center justify-center flex-shrink-0">
+            <Building2 className="w-6 h-6 text-red-600" />
           </div>
-          <button
-            onClick={desconectar}
-            disabled={busy}
-            className="btn-secondary text-sm text-red-600 hover:text-red-700 disabled:opacity-50"
-          >
-            {busy ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Unplug className="w-4 h-4" />}
-            Desconectar
-          </button>
-        </>
-      ) : (
-        <button
-          onClick={conectar}
-          className="btn-primary w-full justify-center"
-          style={{ backgroundColor: '#1877F2' }}
-        >
-          <Facebook className="w-4 h-4" />
-          Conectar con Facebook
-        </button>
-      )}
+          <div>
+            <h3 className="text-base font-semibold text-slate-900">SII — Servicio de Impuestos Internos</h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Conecta con tu clave tributaria para consultar el Registro de Compras y Ventas (RCV).
+            </p>
+          </div>
+        </div>
+
+        {siiLoadingEst ? (
+          <div className="flex justify-center py-6"><RefreshCw className="w-5 h-5 text-slate-300 animate-spin" /></div>
+        ) : (
+          <>
+            {siiEstado?.conectado && (
+              <div className="bg-slate-50 rounded-lg p-4">
+                <div className="flex items-center gap-2 text-sm">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+                  <span className="font-medium text-slate-800">Conectado</span>
+                </div>
+                {siiEstado.ultimo_login && (
+                  <p className="text-xs text-slate-500 mt-1 pl-6">
+                    Último login: {new Date(siiEstado.ultimo_login).toLocaleString('es-CL')}
+                  </p>
+                )}
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <label className="block text-xs font-medium text-slate-600">
+                {siiEstado?.conectado ? 'Reconectar con nueva clave' : 'Clave tributaria SII'}
+              </label>
+              <div className="relative">
+                <input
+                  type={siiShowClave ? 'text' : 'password'}
+                  value={siiClave}
+                  onChange={e => setSiiClave(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && conectarSII()}
+                  placeholder="Ingresa tu clave tributaria"
+                  className="input-base pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setSiiShowClave(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                >
+                  {siiShowClave ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              {siiError && (
+                <p className="text-xs text-red-600 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" />{siiError}
+                </p>
+              )}
+            </div>
+
+            <button
+              onClick={conectarSII}
+              disabled={siiConectando || !siiClave.trim()}
+              className="btn-primary w-full justify-center disabled:opacity-50"
+              style={{ backgroundColor: '#cc0000' }}
+            >
+              {siiConectando
+                ? <><RefreshCw className="w-4 h-4 animate-spin" />Conectando...</>
+                : siiEstado?.conectado
+                  ? <><RefreshCw className="w-4 h-4" />Reconectar</>
+                  : <><Building2 className="w-4 h-4" />Conectar con SII</>
+              }
+            </button>
+          </>
+        )}
+      </div>
     </div>
   )
 }
