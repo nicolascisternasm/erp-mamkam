@@ -1487,12 +1487,6 @@ export default function FinanzasPage() {
             {allItems.length} movimientos · {pendientes.length} pendientes de conciliar
           </p>
         </div>
-        {activeTab === 'movimientos' && (
-          <button onClick={() => setShowCartola(true)} className="btn-primary">
-            <Upload className="w-4 h-4" />
-            Subir Cartola
-          </button>
-        )}
         {activeTab === 'cuentas' && isAdmin && (
           <button onClick={openNewCuenta} className="btn-primary">
             <Plus className="w-4 h-4" />
@@ -1505,38 +1499,42 @@ export default function FinanzasPage() {
             Agregar cuenta
           </button>
         )}
-        {activeTab === 'gastos' && cuentasBancarias.some(cb => cb.nombre?.toLowerCase().includes('mercado pago')) && (
-          <div className="flex gap-2">
-            <input
-              ref={mpCsvInputRef}
-              type="file"
-              accept=".csv"
-              className="hidden"
-              onChange={handleImportCSVMP}
-            />
-            <button
-              onClick={() => mpCsvInputRef.current?.click()}
-              disabled={mpImporting}
-              className="btn-secondary"
-            >
-              <Upload className={`w-4 h-4 ${mpImporting ? 'animate-pulse' : ''}`} />
-              {mpImporting ? 'Importando...' : 'Importar CSV de MP'}
-            </button>
-            <button onClick={handleSyncMP} disabled={mpSyncing} className="btn-secondary">
-              <RefreshCw className={`w-4 h-4 ${mpSyncing ? 'animate-spin' : ''}`} />
-              {mpSyncing ? 'Sincronizando...' : 'Sincronizar MP'}
-            </button>
-          </div>
-        )}
         {activeTab === 'movimientos' && (
           <div className="flex gap-2 flex-wrap">
+            {cuentasBancarias.some(cb => cb.nombre?.toLowerCase().includes('mercado pago')) && (
+              <>
+                <input
+                  ref={mpCsvInputRef}
+                  type="file"
+                  accept=".csv"
+                  className="hidden"
+                  onChange={handleImportCSVMP}
+                />
+                <button
+                  onClick={() => mpCsvInputRef.current?.click()}
+                  disabled={mpImporting}
+                  className="btn-secondary"
+                >
+                  <Upload className={`w-4 h-4 ${mpImporting ? 'animate-pulse' : ''}`} />
+                  {mpImporting ? 'Importando...' : 'Importar CSV de MP'}
+                </button>
+                <button onClick={handleSyncMP} disabled={mpSyncing} className="btn-secondary">
+                  <RefreshCw className={`w-4 h-4 ${mpSyncing ? 'animate-spin' : ''}`} />
+                  {mpSyncing ? 'Sincronizando...' : 'Sincronizar MP'}
+                </button>
+              </>
+            )}
             <button onClick={handleExportarContador} className="btn-secondary">
               <FileText className="w-4 h-4" />
               Exportar contador
             </button>
+            <button onClick={() => setShowCartola(true)} className="btn-secondary">
+              <Upload className="w-4 h-4" />
+              Subir Cartola
+            </button>
             <button onClick={() => { setShowImportBanco(true); setImportBancoPaso(1) }} className="btn-secondary">
               <Upload className="w-4 h-4" />
-              Importar cartola CSV
+              Importar CSV
             </button>
             <button onClick={() => setShowMovManual(true)} className="btn-primary">
               <Plus className="w-4 h-4" />
@@ -1551,6 +1549,7 @@ export default function FinanzasPage() {
         {[
           { key: 'dashboard',   label: 'Dashboard',        icon: LayoutDashboard },
           { key: 'banco',       label: 'Cuentas Bancarias', icon: Landmark        },
+          { key: 'movimientos', label: 'Movimientos',        icon: Banknote        },
           { key: 'gastos',      label: 'Libro Diario',      icon: Receipt         },
           { key: 'cuentas',      label: 'Cuentas',           icon: Building2       },
           { key: 'proyeccion',   label: 'Proyección',       icon: BarChart2       },
@@ -2917,7 +2916,105 @@ export default function FinanzasPage() {
         </>
       )}
 
-      {/* ── TAB LIBRO DIARIO ── */}
+      {/* ── TAB MOVIMIENTOS BANCARIOS ── */}
+      {activeTab === 'movimientos' && (() => {
+        const movsFiltr = movsBancarios.filter(m => {
+          if (filtroCbId !== 'todas' && m.cuenta_bancaria_id !== filtroCbId) return false
+          if (filtroTipoBanco !== 'todos' && normalizaTipo(m.tipo) !== filtroTipoBanco) return false
+          if (filtroConciliadoBanco === 'conciliado'    && !m.conciliado) return false
+          if (filtroConciliadoBanco === 'sin-conciliar' &&  m.conciliado) return false
+          if (searchBanco && !((m.glosa || '') + ' ' + (m.descripcion || '')).toLowerCase().includes(searchBanco.toLowerCase())) return false
+          return true
+        })
+        return (
+          <>
+            <div className="card p-4 flex flex-wrap gap-3 mb-4">
+              <select value={filtroCbId} onChange={e => setFiltroCbId(e.target.value)} className="input-base w-52">
+                <option value="todas">Todas las cuentas</option>
+                {cuentasBancarias.map(cb => <option key={cb.id} value={cb.id}>{cb.nombre}</option>)}
+              </select>
+              <select value={filtroTipoBanco} onChange={e => setFiltroTipoBanco(e.target.value)} className="input-base w-40">
+                <option value="todos">Todos los tipos</option>
+                <option value="ingreso">Ingresos</option>
+                <option value="egreso">Egresos</option>
+              </select>
+              <select value={filtroConciliadoBanco} onChange={e => setFiltroConciliadoBanco(e.target.value)} className="input-base w-40">
+                <option value="todos">Todos</option>
+                <option value="conciliado">Conciliados</option>
+                <option value="sin-conciliar">Sin conciliar</option>
+              </select>
+              <div className="relative flex-1 min-w-[180px]">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input value={searchBanco} onChange={e => setSearchBanco(e.target.value)} placeholder="Buscar movimiento..." className="input-base pl-9" />
+              </div>
+            </div>
+
+            <div className="card overflow-hidden">
+              <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-100">
+                <Banknote className="w-4 h-4 text-indigo-500" />
+                <h3 className="text-sm font-semibold text-slate-700">Movimientos bancarios</h3>
+                <span className="text-xs text-slate-400 font-normal ml-1">({movsFiltr.length} registros)</span>
+              </div>
+              {movsBLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <RefreshCw className="w-5 h-5 text-indigo-400 animate-spin mr-2" />
+                  <span className="text-sm text-slate-500">Cargando...</span>
+                </div>
+              ) : movsFiltr.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-center">
+                  <Banknote className="w-10 h-10 text-slate-300 mb-3" />
+                  <p className="text-sm font-medium text-slate-500">
+                    {filtroCbId !== 'todas' ? 'Sin movimientos para esta cuenta' : 'Sin movimientos bancarios'}
+                  </p>
+                  <p className="text-xs text-slate-400 mt-1">Importa una cartola CSV o sincroniza con Mercado Pago.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200">
+                        <th className="table-th">Fecha</th>
+                        <th className="table-th">Cuenta</th>
+                        <th className="table-th">Descripción</th>
+                        <th className="table-th text-right">Debe</th>
+                        <th className="table-th text-right">Haber</th>
+                        <th className="table-th text-center">Estado</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {movsFiltr.map(m => {
+                        const tipo = normalizaTipo(m.tipo)
+                        return (
+                          <tr key={m.id} className="hover:bg-slate-50/80 transition-colors">
+                            <td className="table-td text-slate-500 whitespace-nowrap text-xs">{formatDate(m.fecha)}</td>
+                            <td className="table-td text-xs text-slate-600 whitespace-nowrap">{m.cuentas_bancarias?.nombre || '—'}</td>
+                            <td className="table-td max-w-[260px]">
+                              <div className="text-xs font-medium text-slate-800 truncate">{m.glosa || m.descripcion || '—'}</div>
+                              {m.archivo_origen && <div className="text-xs text-slate-400 truncate">{m.archivo_origen}</div>}
+                            </td>
+                            <td className="table-td text-right font-semibold text-red-700 whitespace-nowrap text-xs">
+                              {tipo === 'egreso' ? formatCLP(m.monto) : <span className="text-slate-300">—</span>}
+                            </td>
+                            <td className="table-td text-right font-semibold text-emerald-700 whitespace-nowrap text-xs">
+                              {tipo === 'ingreso' ? formatCLP(m.monto) : <span className="text-slate-300">—</span>}
+                            </td>
+                            <td className="table-td text-center">
+                              {m.conciliado
+                                ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700"><CheckCircle2 className="w-3 h-3" />Conciliado</span>
+                                : <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700"><Clock className="w-3 h-3" />Pendiente</span>
+                              }
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </>
+        )
+      })()}
 
       {/* ── TAB PROYECCIÓN ── */}
       {activeTab === 'proyeccion' && (
