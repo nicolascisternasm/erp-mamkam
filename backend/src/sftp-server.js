@@ -4,7 +4,7 @@ const fs = require('fs')
 
 const SFTP_USER = process.env.SFTP_USER || 'mamkam'
 const SFTP_PASS = process.env.SFTP_PASSWORD || 'MamkamSFTP2026!'
-const SFTP_PORT = parseInt(process.env.SFTP_PORT || '22', 10)
+const SFTP_PORT = parseInt(process.env.SFTP_PORT || '2222', 10)
 
 function iniciarSFTPServer(onArchivoRecibido) {
   const hostKeyPath = process.env.SFTP_HOST_KEY_PATH || '/tmp/host.key'
