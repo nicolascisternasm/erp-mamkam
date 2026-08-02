@@ -224,39 +224,59 @@ router.post('/report-webhook', async (req, res) => {
       console.log('[MP report-webhook] firma recibida:', signature)
     }
 
-    const fileName =
-      req.body?.data?.id ||
-      req.body?.file_name ||
-      req.body?.files?.find(f => f.type === 'file/csv')?.name ||
-      null
+    const csvFile    = req.body?.files?.find(f => f.type === 'file/csv')
+    const fileName   = req.body?.data?.id || req.body?.file_name || csvFile?.name || null
+    const downloadUrl = csvFile?.url || null
 
-    if (!fileName) {
+    if (!fileName && !downloadUrl) {
       console.log('[MP report-webhook] sin fileName en body:', JSON.stringify(req.body))
       return
     }
 
-    console.log('[MP report-webhook] descargando reporte:', fileName)
+    console.log('[MP report-webhook] reporte:', fileName, '| url directa:', downloadUrl || 'no')
 
     const TOKEN = process.env.MP_ACCESS_TOKEN
-    const endpoints = [
-      `https://api.mercadopago.com/v1/account/settlement_report/${fileName}`,
-      `https://api.mercadopago.com/v1/account/bank_report/${fileName}`,
-      `https://api.mercadopago.com/v1/account/release_report/${fileName}`,
-    ]
-
     let csvText = null
-    for (const url of endpoints) {
-      const r = await fetch(url, { headers: { 'Authorization': `Bearer ${TOKEN}` } })
-      if (r.ok) {
-        csvText = await r.text()
-        console.log(`[MP report-webhook] descargado desde: ${url}`)
-        break
+
+    // 1. Intentar URL directa del webhook
+    if (downloadUrl) {
+      console.log(`[MP report-webhook] descargando desde URL directa: ${downloadUrl}`)
+      const res = await fetch(downloadUrl, {
+        headers: { 'Authorization': `Bearer ${TOKEN}` },
+      })
+      if (res.ok) {
+        csvText = await res.text()
+        console.log('[MP report-webhook] descarga exitosa desde URL directa')
+      } else {
+        console.log(`[MP report-webhook] URL directa falló: ${res.status}`)
       }
-      console.log(`[MP report-webhook] falló: ${url} → ${r.status}`)
+    }
+
+    // 2. Fallback: listar reportes y buscar por fileName
+    if (!csvText && fileName) {
+      console.log('[MP report-webhook] buscando en lista de reportes...')
+      const listRes = await fetch(
+        'https://api.mercadopago.com/v1/account/settlement_report/list',
+        { headers: { 'Authorization': `Bearer ${TOKEN}` } }
+      )
+      if (listRes.ok) {
+        const lista = await listRes.json()
+        const reporte = Array.isArray(lista) ? lista.find(r => r.file_name === fileName) : null
+        if (reporte?.file_name) {
+          const dlRes = await fetch(
+            `https://api.mercadopago.com/v1/account/settlement_report/${reporte.file_name}`,
+            { headers: { 'Authorization': `Bearer ${TOKEN}` } }
+          )
+          if (dlRes.ok) {
+            csvText = await dlRes.text()
+            console.log('[MP report-webhook] descarga exitosa desde lista')
+          }
+        }
+      }
     }
 
     if (!csvText) {
-      console.error('[MP report-webhook] no se pudo descargar el CSV de ningún endpoint')
+      console.error('[MP report-webhook] no se pudo obtener el CSV')
       return
     }
 
