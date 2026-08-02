@@ -11,6 +11,7 @@
     "@anthropic-ai/sdk": "^0.105.0",
     "@supabase/supabase-js": "^2.43.4",
     "axios": "^1.19.0",
+    "axios-cookiejar-support": "^7.0.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
@@ -20,6 +21,7 @@
     "node-forge": "^1.4.0",
     "nodemailer": "^9.0.1",
     "ssh2": "^1.17.0",
+    "tough-cookie": "^6.0.2",
     "ws": "^8.18.0",
     "xml-crypto": "^6.1.2"
   },

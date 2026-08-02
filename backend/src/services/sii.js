@@ -1,6 +1,9 @@
 const forge = require('node-forge')
 const axios = require('axios')
 const { SignedXml } = require('xml-crypto')
+const tough = require('tough-cookie')
+const { wrapper } = require('axios-cookiejar-support')
+const crypto = require('crypto')
 
 const SII_AMBIENTE = 'https://palena.sii.cl' // producción
 // const SII_AMBIENTE = 'https://maullin.sii.cl' // certificación
@@ -138,42 +141,95 @@ async function obtenerToken() {
   return match[1]
 }
 
-async function consultarRCV(rut, dv, periodo, tipo = 'COMPRA') {
-  // rut: '78348727' (sin puntos, sin DV)
-  // dv: '6'
-  // periodo: '202407' (YYYYMM)
-  // tipo: 'COMPRA' o 'VENTA'
+async function loginWebSII(rut, clave) {
+  const cookieJar = new tough.CookieJar()
+  const axiosSession = wrapper(axios.create({ jar: cookieJar }))
 
-  const token = await obtenerToken()
-
-  const anio = periodo.substring(0, 4)
-  const mes  = periodo.substring(4, 6)
-
-  const url = 'https://palena.sii.cl/cgi_dte/UF_SerachEngine.cgi'
-  const params = new URLSearchParams({
-    rutContribuyente: rut,
-    dvContribuyente:  dv,
-    periodo:          `${anio}${mes}`,
-    tipoOp:           tipo,
-    tipoDoc:          '0',
-    codigoDoc:        '',
-    modoSeleccionBusqueda: '2',
-  })
-
-  const response = await axios.get(`${url}?${params}`, {
+  await axiosSession.get('https://zeusr.sii.cl/AUT2000/InicioAutenticacion.html', {
     headers: {
-      'Cookie':      `TOKEN=${token}`,
-      'User-Agent':  'Mozilla/5.0',
-      'Accept':      'application/json, text/plain, */*',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Referer': 'https://www.sii.cl/',
     },
   })
 
-  console.log('[SII RCV] status:', response.status)
-  console.log('[SII RCV] respuesta (primeros 500):',
-    typeof response.data === 'string'
-      ? response.data.substring(0, 500)
-      : JSON.stringify(response.data).substring(0, 500)
+  const loginData = new URLSearchParams({
+    rut,
+    dv: '6',
+    clave,
+    referencia: 'https://www4.sii.cl/consdcvinternetui/#/index',
+  })
+
+  const loginResponse = await axiosSession.post(
+    'https://herculesr.sii.cl/cgi_AUT2000/autInicio.cgi',
+    loginData.toString(),
+    {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Referer': 'https://zeusr.sii.cl/AUT2000/InicioAutenticacion.html',
+        'Origin': 'https://zeusr.sii.cl',
+      },
+      maxRedirects: 5,
+    }
   )
+
+  console.log('[SII Login] status:', loginResponse.status)
+
+  await axiosSession.get('https://www4.sii.cl/consdcvinternetui/#/index', {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      'Referer': 'https://www.sii.cl/',
+    },
+  })
+
+  return { axiosSession, cookieJar }
+}
+
+async function consultarRCV(rut, dv, periodo, tipo = 'COMPRA') {
+  const token = await obtenerToken()
+
+  const claveSII = process.env.SII_CLAVE
+  const { axiosSession } = await loginWebSII(rut, claveSII)
+
+  await axiosSession.get(
+    'https://www4.sii.cl/consdcvinternetui/services/data/facadeService/getResumen'
+  ).catch(() => {})
+
+  const transactionId = crypto.randomUUID()
+
+  const response = await axiosSession.post(
+    'https://www4.sii.cl/consdcvinternetui/services/data/facadeService/getResumen',
+    {
+      metaData: {
+        namespace: 'cl.sii.sdi.lob.diii.consdcv.data.api.interfaces.FacadeService/getResumen',
+        conversationId: token,
+        transactionId,
+        page: null,
+      },
+      data: {
+        rutEmisor: rut,
+        dvEmisor: dv,
+        ptributario: periodo,
+        estadoContab: 'REGISTRO',
+        operacion: tipo,
+        busquedaInicial: true,
+      },
+    },
+    {
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json, text/plain, */*',
+        'Origin': 'https://www4.sii.cl',
+        'Referer': 'https://www4.sii.cl/consdcvinternetui/',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Cookie': `TOKEN=${token}; CSESSIONID=${token}`,
+      },
+    }
+  )
+
+  console.log('[SII RCV] status:', response.status)
+  console.log('[SII RCV] data:', JSON.stringify(response.data).substring(0, 500))
 
   return response.data
 }
