@@ -64,18 +64,21 @@ async function firmarSemilla(semilla) {
 
   const xmlToSign = `<getToken><item><Semilla>${semilla}</Semilla></item></getToken>`
 
-  const sig = new SignedXml()
-  sig.signingKey = privateKeyPem
-  sig.addReference(
-    '/getToken',
-    [
+  const sig = new SignedXml({
+    privateKey: privateKeyPem,
+    signatureAlgorithm: 'http://www.w3.org/2000/09/xmldsig#rsa-sha1',
+    canonicalizationAlgorithm: 'http://www.w3.org/TR/2001/REC-xml-c14n-20010315',
+  })
+
+  sig.addReference({
+    xpath: '/getToken',
+    transforms: [
       'http://www.w3.org/2000/09/xmldsig#enveloped-signature',
       'http://www.w3.org/TR/2001/REC-xml-c14n-20010315',
     ],
-    'http://www.w3.org/2000/09/xmldsig#sha1'
-  )
-  sig.signatureAlgorithm = 'http://www.w3.org/2000/09/xmldsig#rsa-sha1'
-  sig.canonicalizationAlgorithm = 'http://www.w3.org/TR/2001/REC-xml-c14n-20010315'
+    digestAlgorithm: 'http://www.w3.org/2000/09/xmldsig#sha1',
+  })
+
   sig.keyInfoProvider = {
     getKeyInfo: () => `<X509Data><X509Certificate>${certBase64}</X509Certificate></X509Data>`,
   }
