@@ -6,9 +6,9 @@ const SII_AMBIENTE = 'https://palena.sii.cl' // producción
 
 async function obtenerSemilla() {
   const url = `${SII_AMBIENTE}/DTEWS/CrSeed.jws`
-  const response = await axios.post(url, '', {
-    headers: { 'Content-Type': 'text/xml; charset=utf-8' },
-  })
+  const response = await axios.get(url)
+  console.log('[SII] Respuesta semilla status:', response.status)
+  console.log('[SII] Respuesta semilla data:', response.data)
   const match = response.data.match(/<SEMILLA>(\d+)<\/SEMILLA>/)
   if (!match) throw new Error('No se pudo obtener semilla del SII')
   return match[1]
@@ -67,6 +67,7 @@ async function firmarSemilla(semilla) {
   </Signature>
 </getToken>`
 
+  console.log('[SII] XML a firmar (primeros 200 chars):', xmlFirmado.substring(0, 200))
   return xmlFirmado
 }
 
@@ -81,9 +82,10 @@ async function obtenerToken() {
     headers: { 'Content-Type': 'text/xml; charset=utf-8' },
   })
 
+  console.log('[SII] Respuesta token status:', response.status)
+  console.log('[SII] Respuesta token data:', response.data)
   const match = response.data.match(/<TOKEN>([^<]+)<\/TOKEN>/)
   if (!match) {
-    console.error('[SII] Respuesta GetToken:', response.data)
     throw new Error('No se pudo obtener token del SII')
   }
 
