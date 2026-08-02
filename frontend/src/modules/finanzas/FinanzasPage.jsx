@@ -394,6 +394,8 @@ export default function FinanzasPage() {
   const [delCbLoading,      setDelCbLoading]      = useState(false)
 
   const [mpSyncing,         setMpSyncing]         = useState(false)
+  const [mpImporting,       setMpImporting]       = useState(false)
+  const mpCsvInputRef = useRef(null)
   const [movsBancarios,     setMovsBancarios]     = useState([])
   const [movsBLoading,      setMovsBLoading]      = useState(false)
   const [filtroCbId,        setFiltroCbId]        = useState('todas')
@@ -1451,6 +1453,30 @@ export default function FinanzasPage() {
     }
   }
 
+  const handleImportCSVMP = (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    setMpImporting(true)
+    const reader = new FileReader()
+    reader.onload = async (ev) => {
+      try {
+        const csvText = ev.target.result
+        const { sincronizados } = await apiClient.post('/mercadopago/import-csv', {
+          csvText,
+          fileName: file.name,
+        })
+        showToastCuenta('success', `Importados ${sincronizados} movimientos de Mercado Pago`)
+        cargarMovsBancarios()
+      } catch (err) {
+        showToastCuenta('error', `Error al importar CSV: ${err.message}`)
+      } finally {
+        setMpImporting(false)
+      }
+    }
+    reader.readAsText(file, 'utf-8')
+  }
+
   return (
     <div className="space-y-5 w-full">
       {/* Header */}
@@ -1480,10 +1506,27 @@ export default function FinanzasPage() {
           </button>
         )}
         {activeTab === 'gastos' && cuentasBancarias.some(cb => cb.nombre?.toLowerCase().includes('mercado pago')) && (
-          <button onClick={handleSyncMP} disabled={mpSyncing} className="btn-secondary">
-            <RefreshCw className={`w-4 h-4 ${mpSyncing ? 'animate-spin' : ''}`} />
-            {mpSyncing ? 'Sincronizando...' : 'Sincronizar MP'}
-          </button>
+          <div className="flex gap-2">
+            <input
+              ref={mpCsvInputRef}
+              type="file"
+              accept=".csv"
+              className="hidden"
+              onChange={handleImportCSVMP}
+            />
+            <button
+              onClick={() => mpCsvInputRef.current?.click()}
+              disabled={mpImporting}
+              className="btn-secondary"
+            >
+              <Upload className={`w-4 h-4 ${mpImporting ? 'animate-pulse' : ''}`} />
+              {mpImporting ? 'Importando...' : 'Importar CSV de MP'}
+            </button>
+            <button onClick={handleSyncMP} disabled={mpSyncing} className="btn-secondary">
+              <RefreshCw className={`w-4 h-4 ${mpSyncing ? 'animate-spin' : ''}`} />
+              {mpSyncing ? 'Sincronizando...' : 'Sincronizar MP'}
+            </button>
+          </div>
         )}
         {activeTab === 'movimientos' && (
           <div className="flex gap-2 flex-wrap">

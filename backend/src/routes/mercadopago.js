@@ -367,6 +367,23 @@ async function procesarMovimientosMP(movimientos) {
   return sincronizados
 }
 
+// ── POST /import-csv — importación manual de CSV descargado del portal MP ────
+router.post('/import-csv', requireAuth, async (req, res) => {
+  try {
+    const { csvText, fileName } = req.body || {}
+    if (!csvText) return res.status(400).json({ error: 'csvText requerido' })
+
+    console.log(`[MP import-csv] procesando: ${fileName || 'sin nombre'} (${csvText.length} bytes)`)
+    const movimientos = parsearBankReportCSV(csvText)
+    const sincronizados = await procesarMovimientosMP(movimientos)
+
+    res.json({ data: { sincronizados, total: movimientos.length } })
+  } catch (err) {
+    console.error('[MP import-csv] error:', err.message)
+    res.status(500).json({ error: err.message })
+  }
+})
+
 // ── GET /sync — requiere auth ─────────────────────────────────────────────────
 router.get('/sync', requireAuth, async (req, res) => {
   req.setTimeout(90000)
