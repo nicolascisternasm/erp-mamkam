@@ -105,12 +105,32 @@ async function generarYDescargarBankReport(diasAtras) {
   return parsearBankReportCSV(csvText)
 }
 
+const COLUMN_MAP = {
+  'ID DE OPERACIÓN EN MERCADO PAGO': 'SOURCE_ID',
+  'CÓDIGO DE REFERENCIA':            'EXTERNAL_REFERENCE',
+  'TIPO DE MEDIO DE PAGO':           'PAYMENT_METHOD_TYPE',
+  'TIPO DE OPERACIÓN':               'TRANSACTION_TYPE',
+  'VALOR DE LA COMPRA':              'TRANSACTION_AMOUNT',
+  'MONTO NETO DE LA OPERACIÓN':      'REAL_AMOUNT',
+  'COMISIONES + IVA':                'FEE_AMOUNT',
+  'FECHA DE ORIGEN':                 'TRANSACTION_DATE',
+  'FECHA CORTA DE APROBACIÓN':       'SETTLEMENT_DATE_SHORT',
+  'BANCO DE ORIGEN':                 'POI_BANK_NAME',
+  'MONTO NETO DE LA OPERACIÓN QUE IMPACTÓ EN TU DINERO': 'SETTLEMENT_NET_AMOUNT',
+  'DATOS EXTRA':                     'METADATA',
+  'FECHA DE APROBACIÓN':             'SETTLEMENT_DATE',
+  'MEDIO DE PAGO':                   'PAYMENT_METHOD',
+}
+
 function parsearBankReportCSV(csvText) {
   const lineas = csvText.split('\n').filter(l => l.trim())
   if (lineas.length < 2) return []
 
   const sep = lineas[0].includes(';') ? ';' : ','
-  const header = lineas[0].split(sep).map(h => h.trim().replace(/"/g, '').toUpperCase())
+  const header = lineas[0].split(sep).map(h => {
+    const normalizado = h.trim().replace(/"/g, '').toUpperCase()
+    return COLUMN_MAP[normalizado] || normalizado
+  })
 
   console.log('[MP bank_report] columnas:', header)
   console.log('[MP bank_report] filas de datos:', lineas.length - 1)
@@ -204,7 +224,12 @@ router.post('/report-webhook', async (req, res) => {
       console.log('[MP report-webhook] firma recibida:', signature)
     }
 
-    const fileName = req.body?.data?.id || req.body?.file_name
+    const fileName =
+      req.body?.data?.id ||
+      req.body?.file_name ||
+      req.body?.files?.find(f => f.type === 'file/csv')?.name ||
+      null
+
     if (!fileName) {
       console.log('[MP report-webhook] sin fileName en body:', JSON.stringify(req.body))
       return
@@ -212,26 +237,26 @@ router.post('/report-webhook', async (req, res) => {
 
     console.log('[MP report-webhook] descargando reporte:', fileName)
 
-    // Intentar settlement_report primero, fallback a bank_report
-    const authHeader = { Authorization: `Bearer ${MP_ACCESS_TOKEN}` }
-    let csvText = null
-
-    const settlRes = await fetch(
+    const TOKEN = process.env.MP_ACCESS_TOKEN
+    const endpoints = [
       `https://api.mercadopago.com/v1/account/settlement_report/${fileName}`,
-      { headers: authHeader }
-    )
-    if (settlRes.ok) {
-      csvText = await settlRes.text()
-    } else {
-      const bankRes = await fetch(
-        `https://api.mercadopago.com/v1/account/bank_report/${fileName}`,
-        { headers: authHeader }
-      )
-      if (bankRes.ok) csvText = await bankRes.text()
+      `https://api.mercadopago.com/v1/account/bank_report/${fileName}`,
+      `https://api.mercadopago.com/v1/account/release_report/${fileName}`,
+    ]
+
+    let csvText = null
+    for (const url of endpoints) {
+      const r = await fetch(url, { headers: { 'Authorization': `Bearer ${TOKEN}` } })
+      if (r.ok) {
+        csvText = await r.text()
+        console.log(`[MP report-webhook] descargado desde: ${url}`)
+        break
+      }
+      console.log(`[MP report-webhook] falló: ${url} → ${r.status}`)
     }
 
     if (!csvText) {
-      console.error('[MP report-webhook] no se pudo descargar el CSV:', fileName)
+      console.error('[MP report-webhook] no se pudo descargar el CSV de ningún endpoint')
       return
     }
 
