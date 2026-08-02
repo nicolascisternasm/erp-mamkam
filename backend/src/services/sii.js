@@ -23,7 +23,15 @@ async function obtenerSemilla() {
   console.log('[SII] Respuesta semilla status:', response.status)
   console.log('[SII] Respuesta semilla data:', response.data.substring(0, 500))
 
-  const match = response.data.match(/<(?:SII:)?SEMILLA>(\d+)<\/(?:SII:)?SEMILLA>/)
+  const rawXml = response.data
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&')
+
+  console.log('[SII] XML desescapado (primeros 500):', rawXml.substring(0, 500))
+
+  const match = rawXml.match(/<(?:SII:)?SEMILLA>(\d+)<\/(?:SII:)?SEMILLA>/)
   if (!match) throw new Error('No se pudo obtener semilla del SII')
   return match[1]
 }
