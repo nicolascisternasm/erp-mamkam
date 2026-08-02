@@ -194,6 +194,7 @@ async function loginWebSII(rut, clave) {
 }
 
 async function consultarRCV(rut, dv, periodo, tipo = 'COMPRA') {
+  console.log('[SII] consultarRCV iniciado - versión con loginWebSII')
   const token = await obtenerToken()
 
   const claveSII = process.env.SII_CLAVE
