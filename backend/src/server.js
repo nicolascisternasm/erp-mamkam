@@ -36,7 +36,6 @@ const mercadoPagoRoutes      = require('./routes/mercadopago.js')
 const { requireAuth }        = require('./middleware/auth.js')
 
 const app = express()
-const HTTP_PORT = process.env.PORT || 8080
 
 app.use(cors({
   origin: [
@@ -87,30 +86,7 @@ app.use((err, req, res, _next) => {
   res.status(500).json({ error: 'Error interno del servidor' })
 })
 
-app.listen(HTTP_PORT, () => {
-  console.log(`🚀 ERP MAMKAM API corriendo en http://localhost:${HTTP_PORT}`)
-
-  // Iniciar servidor SFTP después de que Express esté escuchando
-  const fs = require('fs')
-  if (!fs.existsSync('/tmp/host.key')) {
-    try {
-      const { generateKeyPairSync } = require('crypto')
-      const { privateKey } = generateKeyPairSync('rsa', {
-        modulusLength: 2048,
-        privateKeyEncoding: { type: 'pkcs1', format: 'pem' },
-      })
-      fs.writeFileSync('/tmp/host.key', privateKey)
-      console.log('[SFTP] Host key RSA generada con crypto')
-    } catch (e) {
-      console.error('[SFTP] Error generando host key:', e.message)
-    }
-  }
-
-  const { iniciarSFTPServer } = require('./sftp-server')
-  iniciarSFTPServer(async (fileName, csvText) => {
-    console.log(`[SFTP] Procesando reporte: ${fileName}`)
-    const movimientos = mercadoPagoRoutes.parsearBankReportCSV(csvText)
-    const procesados  = await mercadoPagoRoutes.procesarMovimientosMP(movimientos)
-    console.log(`[SFTP] ${procesados} movimientos procesados desde ${fileName}`)
-  })
+const PORT = process.env.PORT || 8080
+app.listen(PORT, () => {
+  console.log(`🚀 ERP MAMKAM API corriendo en http://localhost:${PORT}`)
 })
