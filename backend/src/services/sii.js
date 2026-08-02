@@ -2,6 +2,7 @@ const forge = require('node-forge')
 const axios = require('axios')
 const { SignedXml } = require('xml-crypto')
 const crypto = require('crypto')
+const supabase = require('../lib/supabase')
 
 const SII_AMBIENTE = 'https://palena.sii.cl' // producción
 // const SII_AMBIENTE = 'https://maullin.sii.cl' // certificación
@@ -193,12 +194,29 @@ async function loginWebSII(rut, clave) {
   return cookiesFinal
 }
 
-async function consultarRCV(rut, dv, periodo, tipo = 'COMPRA') {
+async function consultarRCV(rut, dv, periodo, tipo = 'COMPRA', empresaId = null) {
   console.log('[SII] consultarRCV iniciado - versión con loginWebSII')
   const token = await obtenerToken()
 
-  const claveSII = process.env.SII_CLAVE
-  const cookiesStr = await loginWebSII(rut, claveSII)
+  let cookiesStr = null
+
+  // Leer cookies desde sii_config en Supabase si tenemos empresa_id
+  if (empresaId) {
+    const { data: cfg } = await supabase
+      .from('sii_config')
+      .select('sii_cookies')
+      .eq('empresa_id', empresaId)
+      .single()
+    cookiesStr = cfg?.sii_cookies || null
+    console.log('[SII] cookies desde sii_config:', cookiesStr ? 'OK' : 'no encontradas')
+  }
+
+  // Fallback: hacer login con clave de env si no hay cookies guardadas
+  if (!cookiesStr) {
+    const claveSII = process.env.SII_CLAVE
+    if (!claveSII) throw new Error('No hay cookies de sesión SII ni SII_CLAVE configurada')
+    cookiesStr = await loginWebSII(rut, claveSII)
+  }
 
   const transactionId = crypto.randomUUID()
 
@@ -238,4 +256,4 @@ async function consultarRCV(rut, dv, periodo, tipo = 'COMPRA') {
   return response.data
 }
 
-module.exports = { obtenerToken, consultarRCV, obtenerSemilla }
+module.exports = { obtenerToken, consultarRCV, obtenerSemilla, loginWebSII }
