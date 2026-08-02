@@ -193,6 +193,79 @@ async function intentarConciliacion(monto, empresaId) {
   }
 }
 
+// ── POST /report-webhook — notificación de reporte listo (sin auth) ──────────
+router.post('/report-webhook', async (req, res) => {
+  res.sendStatus(200) // responder INMEDIATAMENTE
+
+  try {
+    const secret    = process.env.MP_WEBHOOK_SECRET
+    const signature = req.headers['x-signature']
+    if (signature && secret) {
+      console.log('[MP report-webhook] firma recibida:', signature)
+    }
+
+    const fileName = req.body?.data?.id || req.body?.file_name
+    if (!fileName) {
+      console.log('[MP report-webhook] sin fileName en body:', JSON.stringify(req.body))
+      return
+    }
+
+    console.log('[MP report-webhook] descargando reporte:', fileName)
+
+    // Intentar settlement_report primero, fallback a bank_report
+    const authHeader = { Authorization: `Bearer ${MP_ACCESS_TOKEN}` }
+    let csvText = null
+
+    const settlRes = await fetch(
+      `https://api.mercadopago.com/v1/account/settlement_report/${fileName}`,
+      { headers: authHeader }
+    )
+    if (settlRes.ok) {
+      csvText = await settlRes.text()
+    } else {
+      const bankRes = await fetch(
+        `https://api.mercadopago.com/v1/account/bank_report/${fileName}`,
+        { headers: authHeader }
+      )
+      if (bankRes.ok) csvText = await bankRes.text()
+    }
+
+    if (!csvText) {
+      console.error('[MP report-webhook] no se pudo descargar el CSV:', fileName)
+      return
+    }
+
+    const movimientos = parsearBankReportCSV(csvText)
+    const empresaId   = await getEmpresaId()
+    if (!empresaId) return
+
+    let procesados = 0
+    for (const m of movimientos) {
+      const row = {
+        id: m.id,
+        empresa_id: empresaId,
+        fecha: m.fecha,
+        descripcion: m.descripcion,
+        tipo: m.tipo,
+        monto: m.monto,
+        conciliado: false,
+        cuenta_bancaria_id: MP_CUENTA_ID,
+        glosa: m.glosa,
+        archivo_origen: 'mercadopago_webhook',
+      }
+      const { error } = await supabase
+        .from('movimientos')
+        .upsert(row, { onConflict: 'id' })
+      if (error) console.error('[MP report-webhook] upsert error:', error.message, row.id)
+      else procesados++
+    }
+
+    console.log(`[MP report-webhook] procesados ${procesados} movimientos de ${fileName}`)
+  } catch (err) {
+    console.error('[MP report-webhook] error:', err.message)
+  }
+})
+
 // ── GET /setup — activa reporte diario automático (llamar una vez) ────────────
 router.get('/setup', requireAuth, async (req, res) => {
   try {
