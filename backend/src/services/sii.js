@@ -86,7 +86,7 @@ async function firmarSemilla(semilla) {
   sig.computeSignature(xmlToSign)
   const xmlFirmado = sig.getSignedXml()
 
-  console.log('[SII] XML firmado (primeros 300):', xmlFirmado.substring(0, 300))
+  console.log('[SII] XML firmado completo:', xmlFirmado)
   return xmlFirmado
 }
 
@@ -122,7 +122,7 @@ async function obtenerToken() {
     .replace(/&quot;/g, '"')
     .replace(/&amp;/g, '&')
 
-  console.log('[SII] Token XML desescapado:', rawTokenXml.substring(0, 500))
+  console.log('[SII] Token XML desescapado COMPLETO:', rawTokenXml)
 
   const match = rawTokenXml.match(/<(?:SII:)?TOKEN>([^<]+)<\/(?:SII:)?TOKEN>/)
   if (!match) {
