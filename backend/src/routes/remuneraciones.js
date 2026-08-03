@@ -577,7 +577,6 @@ router.post('/liquidaciones/:id/enviar-email', async (req, res) => {
     const periodo = periodoLabel(liq.periodo)
     const htmlBody = `
       <p>${mensaje || `Estimado/a ${trab.nombre}, adjunto encontrará su liquidación de sueldo correspondiente al período ${periodo}.`}</p>
-      <p>Líquido a pagar: ${fmtCLP(liq.sueldo_liquido)}</p>
       <br>
       <p>Saludos,<br>Equipo MAMKAM<br>contacto@mamkam.cl</p>
     `
