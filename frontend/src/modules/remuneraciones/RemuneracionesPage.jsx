@@ -261,7 +261,7 @@ function DetalleModal({ liq, onClose }) {
         </div>
 
         {/* 2. DATOS DEL TRABAJADOR */}
-        <div style={{display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', background: '#f4f4f4', border: '1px solid #ddd', padding: '7px 10px', marginBottom: '10px'}}>
+        <div style={{display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '8px', background: '#f4f4f4', border: '1px solid #ddd', padding: '7px 10px', marginBottom: '10px'}}>
           <div>
             <div style={{fontSize: '8px', color: '#777', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '2px'}}>Trabajador</div>
             <div style={{fontWeight: '700', fontSize: '10px'}}>{liq.trabajadorNombre}</div>
@@ -277,6 +277,24 @@ function DetalleModal({ liq, onClose }) {
           <div>
             <div style={{fontSize: '8px', color: '#777', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '2px'}}>Período</div>
             <div style={{fontWeight: '600', fontSize: '10px'}}>{periodoLabel(liq.periodo)}</div>
+          </div>
+          <div>
+            <div style={{fontSize: '8px', color: '#777', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '2px'}}>AFP</div>
+            <div style={{fontWeight: '600', fontSize: '10px'}}>{liq.afp || '—'}</div>
+          </div>
+          <div>
+            <div style={{fontSize: '8px', color: '#777', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '2px'}}>Salud</div>
+            <div style={{fontWeight: '600', fontSize: '10px'}}>{liq.previsionSalud || '—'}</div>
+          </div>
+          <div>
+            <div style={{fontSize: '8px', color: '#777', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '2px'}}>Contrato</div>
+            <div style={{fontWeight: '600', fontSize: '10px'}}>
+              {liq.tipoContrato === 'indefinido' ? 'Indefinido'
+                : liq.tipoContrato === 'plazo_fijo' ? 'Plazo fijo'
+                : liq.tipoContrato === 'obra' ? 'Por obra'
+                : liq.tipoContrato === 'honorarios' ? 'Honorarios'
+                : liq.tipoContrato || '—'}
+            </div>
           </div>
         </div>
 
