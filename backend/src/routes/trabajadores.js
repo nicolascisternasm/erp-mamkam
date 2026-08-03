@@ -17,6 +17,36 @@ const fromTrab = (r) => ({
   sueldoEsLiquido:     r.sueldo_es_liquido ?? false,
   fechaIngreso:        r.fecha_ingreso ?? null,
   estado:              r.estado        ?? 'activo',
+  // Datos personales
+  fechaNacimiento:     r.fecha_nacimiento      ?? '',
+  nacionalidad:        r.nacionalidad          ?? '',
+  estadoCivil:         r.estado_civil          ?? '',
+  tipoDocumento:       r.tipo_documento        ?? '',
+  numeroDocumento:     r.numero_documento      ?? '',
+  fechaVencimientoVisa: r.fecha_vencimiento_visa ?? '',
+  // Contacto y dirección
+  direccion:           r.direccion             ?? '',
+  numero:              r.numero                ?? '',
+  comuna:              r.comuna                ?? '',
+  ciudad:              r.ciudad                ?? '',
+  region:              r.region                ?? '',
+  // Datos laborales
+  tipoContrato:        r.tipo_contrato         ?? 'indefinido',
+  bonoFijo:            r.bono_fijo             ?? 0,
+  colacion:            r.colacion              ?? 0,
+  movilizacion:        r.movilizacion          ?? 0,
+  // Previsión social
+  afp:                 r.afp                   ?? 'Habitat',
+  porcentajeAfp:       r.porcentaje_afp        ?? 10.27,
+  previsionSalud:      r.prevision_salud       ?? 'Fonasa',
+  isapre:              r.isapre                ?? '',
+  montoIsapre:         r.monto_isapre          ?? 0,
+  // Datos bancarios
+  banco:               r.banco                 ?? '',
+  tipoCuenta:          r.tipo_cuenta           ?? '',
+  numeroCuenta:        r.numero_cuenta         ?? '',
+  cuentaGastosId:      r.cuenta_gastos_id      ?? null,
+  // Permisos app
   appActiva:           r.app_activa          ?? false,
   puedeCotizar:        r.puede_cotizar        ?? false,
   puedeOC:             r.puede_oc             ?? false,
