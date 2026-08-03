@@ -31,7 +31,7 @@ router.post('/login', requireAuth, async (req, res) => {
 
     const ultimoLogin = new Date().toISOString()
     const { error } = await supabase.from('sii_config').upsert(
-      { empresa_id: empresaId, sii_cookies: cookiesStr, ultimo_login: ultimoLogin },
+      { empresa_id: empresaId, rut, sii_cookies: cookiesStr, ultimo_login: ultimoLogin, activo: true },
       { onConflict: 'empresa_id' }
     )
     if (error) throw new Error(error.message)
