@@ -412,7 +412,7 @@ function DetalleModal({ liq, onClose }) {
           <div className="space-y-0.5 mb-2">
             {liq.sueldoLiquidoPactado > 0 && (
               <div className="flex justify-between text-xs text-slate-400">
-                <span>Líquido pactado</span>
+                <span>Sueldo Líquido</span>
                 <span>{fmtCLP(liq.sueldoLiquidoPactado)}</span>
               </div>
             )}
