@@ -60,6 +60,7 @@ function DetalleModal({ liq, onClose }) {
   const [montoAjustado,   setMontoAjustado]   = useState('')
   const [bonos,           setBonos]           = useState([])
   const [adelantos,       setAdelantos]       = useState([])
+  const [adelantosApp,    setAdelantosApp]    = useState([])
   const [faltasInfo,      setFaltasInfo]      = useState({ faltas: [], valorDia: 0 })
   const [modalEmail,      setModalEmail]      = useState(false)
   const [mensajeEmail,    setMensajeEmail]    = useState('')
@@ -104,10 +105,17 @@ function DetalleModal({ liq, onClose }) {
         .gte('fecha', inicioPeriodo)
         .lte('fecha', finPeriodo)
         .or('empresa_id.is.null'),
-    ]).then(([{ data: b }, { data: a }, { data: fm }, { data: fer }]) => {
+      supabase.from('gastos')
+        .select('id, monto, fecha_gasto, descripcion, subtipo')
+        .eq('trabajador_id', liq.trabajadorId)
+        .eq('subtipo', 'adelanto')
+        .gte('fecha_gasto', inicioPeriodo)
+        .lte('fecha_gasto', finPeriodo),
+    ]).then(([{ data: b }, { data: a }, { data: fm }, { data: fer }, { data: ag }]) => {
       if (cancelled) return
       setBonos(b || [])
       setAdelantos(a || [])
+      setAdelantosApp(ag || [])
 
       const feriadosSet = new Set((fer || []).map(f => f.fecha))
       let diasHabilesMes = 0
@@ -206,7 +214,8 @@ function DetalleModal({ liq, onClose }) {
   // Cálculos
   const heMontoFinal   = parseInt(montoAjustado) || 0
   const totalBonos     = bonos.reduce((a, b) => a + (b.monto || 0), 0)
-  const totalAdelantos = adelantos.reduce((a, b) => a + (b.monto || 0), 0)
+  const todosAdelantos = [...adelantos, ...adelantosApp]
+  const totalAdelantos = todosAdelantos.reduce((a, b) => a + (b.monto || 0), 0)
 
   // Total imponible (base + HH.EE) — bonos del período son NO imponibles
   const totalImponible = (liq.sueldoBase || 0) + (liq.gratificacion || 0) + (liq.bonoFijo || 0)
@@ -338,7 +347,7 @@ function DetalleModal({ liq, onClose }) {
 
             <div className="rounded-lg bg-slate-50 border border-slate-200 p-2">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-600 mb-1">Otros Descuentos</p>
-              {adelantos.length === 0 && (liq.otrosDescuentos || 0) === 0 ? (
+              {todosAdelantos.length === 0 && (liq.otrosDescuentos || 0) === 0 ? (
                 <p className="text-xs text-slate-400 italic">Sin otros descuentos</p>
               ) : (
                 <>
@@ -346,6 +355,15 @@ function DetalleModal({ liq, onClose }) {
                     <L key={a.id}
                       label={`Adelanto ${a.tipo === 'quincena' ? 'quincena' : 'adicional'}${a.descripcion ? ` (${a.descripcion})` : ''}`}
                       value={a.monto} neg />
+                  ))}
+                  {adelantosApp.map(a => (
+                    <div key={a.id} className="flex justify-between items-center py-0.5">
+                      <span className="text-xs text-slate-600 flex items-center gap-1">
+                        Adelanto{a.descripcion ? ` (${a.descripcion})` : ''}
+                        <span className="text-[9px] bg-violet-100 text-violet-700 font-semibold px-1 rounded">App</span>
+                      </span>
+                      <span className="text-xs text-red-600">- {fmtCLP(a.monto)}</span>
+                    </div>
                   ))}
                   {(liq.otrosDescuentos || 0) > 0 && <L label="Otros descuentos" value={liq.otrosDescuentos} neg />}
                   {totalOtrosDesc > 0 && <><Div /><L label="Total otros descuentos" value={totalOtrosDesc} neg bold /></>}
@@ -410,12 +428,21 @@ function DetalleModal({ liq, onClose }) {
                 <span className="text-slate-300">+{fmtCLP(b.monto)}</span>
               </div>
             ))}
-            {(adelantos.length > 0 || (liq.otrosDescuentos || 0) > 0 || totalFaltasDescuento > 0) && (
+            {(todosAdelantos.length > 0 || (liq.otrosDescuentos || 0) > 0 || totalFaltasDescuento > 0) && (
               <div className="border-t border-slate-600 my-1" />
             )}
             {adelantos.map(a => (
               <div key={a.id} className="flex justify-between text-xs text-slate-400">
                 <span>{`Adelanto ${a.tipo === 'quincena' ? 'quincena' : 'adicional'}${a.descripcion ? ` (${a.descripcion})` : ''}`}</span>
+                <span className="text-red-400">-{fmtCLP(a.monto)}</span>
+              </div>
+            ))}
+            {adelantosApp.map(a => (
+              <div key={a.id} className="flex justify-between text-xs text-slate-400">
+                <span className="flex items-center gap-1">
+                  Adelanto{a.descripcion ? ` (${a.descripcion})` : ''}
+                  <span className="text-[9px] bg-violet-800 text-violet-200 font-semibold px-1 rounded">App</span>
+                </span>
                 <span className="text-red-400">-{fmtCLP(a.monto)}</span>
               </div>
             ))}
@@ -602,8 +629,9 @@ function TabLiquidaciones({ periodo, onToast }) {
   const [loading,      setLoading]      = useState(false)
   const [loadingRows,  setLoadingRows]  = useState({})   // { [trabajador_id]: boolean }
   const [detalle,      setDetalle]      = useState(null)
-  const [adelantosMes, setAdelantosMes] = useState([])
-  const [heMap,        setHeMap]        = useState({})   // { [trabajador_id]: { total_horas_extra, monto_horas_extra } }
+  const [adelantosMes,    setAdelantosMes]    = useState([])
+  const [adelantosAppMes, setAdelantosAppMes] = useState([])
+  const [heMap,           setHeMap]           = useState({})   // { [trabajador_id]: { total_horas_extra, monto_horas_extra } }
 
   const cargar = useCallback(async () => {
     if (!periodo) return
@@ -614,14 +642,29 @@ function TabLiquidaciones({ periodo, onToast }) {
       setFilas(rows)
       const trabIds = rows.map(f => f.trabajador?.id).filter(Boolean)
       if (trabIds.length > 0) {
-        const { data: ad } = await supabase
-          .from('adelantos')
-          .select('trabajador_id, monto, tipo, descontado')
-          .eq('periodo', periodo)
-          .in('trabajador_id', trabIds)
+        const [anio, mes] = periodo.split('-').map(Number)
+        const primerDia  = `${periodo}-01`
+        const ultimoDia  = new Date(anio, mes, 0).getDate()
+        const finPeriodo = `${periodo}-${String(ultimoDia).padStart(2, '0')}`
+        const [{ data: ad }, { data: ag }] = await Promise.all([
+          supabase
+            .from('adelantos')
+            .select('trabajador_id, monto, tipo, descontado')
+            .eq('periodo', periodo)
+            .in('trabajador_id', trabIds),
+          supabase
+            .from('gastos')
+            .select('trabajador_id, monto')
+            .eq('subtipo', 'adelanto')
+            .gte('fecha_gasto', primerDia)
+            .lte('fecha_gasto', finPeriodo)
+            .in('trabajador_id', trabIds),
+        ])
         setAdelantosMes(ad ?? [])
+        setAdelantosAppMes(ag ?? [])
       } else {
         setAdelantosMes([])
+        setAdelantosAppMes([])
       }
 
       // Cargar horas extras en paralelo para trabajadores con liquidación
@@ -713,7 +756,7 @@ function TabLiquidaciones({ periodo, onToast }) {
   const conLiq = filas.filter(f => f.liquidacion)
   const totales = conLiq.reduce(
     (a, { trabajador: t, liquidacion: l }) => {
-      const adelantosTrab = adelantosMes
+      const adelantosTrab = [...adelantosMes, ...adelantosAppMes]
         .filter(ad => ad.trabajador_id === t.id)
         .reduce((sum, ad) => sum + (ad.monto || 0), 0)
       const heMonto = heMap[t.id]?.monto_horas_extra || 0
@@ -767,7 +810,7 @@ function TabLiquidaciones({ periodo, onToast }) {
                   const rowLoading = !!loadingRows[t.id]
                   const initials   = t.nombre.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()
                   const adelantosTrab = l
-                    ? adelantosMes
+                    ? [...adelantosMes, ...adelantosAppMes]
                         .filter(ad => ad.trabajador_id === t.id)
                         .reduce((sum, ad) => sum + (ad.monto || 0), 0)
                     : 0
