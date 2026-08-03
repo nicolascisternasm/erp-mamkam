@@ -124,27 +124,27 @@ export default function ModalVisita({ cot, onClose }) {
     const btnGray = `${btnBase} text-slate-600 bg-slate-100 hover:bg-slate-200`
     const btnIndigo = `${btnBase} text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60`
 
-    /* Tab Datos sin visita → Cancelar + Crear visita */
+    /* Tab Datos sin visita → Cancelar + Siguiente (crea visita al avanzar) */
     if (tab === 'Datos' && !visita) {
       return (
         <>
           <button className={btnGray} onClick={onClose}>Cancelar</button>
           <button className={btnIndigo} onClick={handleCrear} disabled={guardando}>
             {guardando && <Loader2 className="w-4 h-4 animate-spin" />}
-            Crear visita
+            Siguiente <ChevronRight className="w-4 h-4" />
           </button>
         </>
       )
     }
 
-    /* Tab Resumen IA → Anterior + Cerrar */
+    /* Tab Resumen IA → Anterior + Finalizar visita */
     if (tab === 'Resumen IA') {
       return (
         <>
           <button className={btnGray} onClick={() => setTab(TABS[tabIdx - 1])}>
             <ChevronLeft className="w-4 h-4" /> Anterior
           </button>
-          <button className={btnGray} onClick={onClose}>Cerrar</button>
+          <button className={btnIndigo} onClick={onClose}>Finalizar visita</button>
         </>
       )
     }

@@ -1086,7 +1086,7 @@ export default function CotizacionDetalle() {
       )}
 
       {/* Botón flotante Visita */}
-      {cot && ['aprobada', 'en_ejecucion', 'cerrada'].includes(cot.estado) && (
+      {cot && cot.estado === 'visita' && (
         <button
           data-html2canvas-ignore="true"
           onClick={() => setModalVisita(true)}
