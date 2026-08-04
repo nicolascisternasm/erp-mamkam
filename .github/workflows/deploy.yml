@@ -25,6 +25,8 @@ jobs:
         run: ./node_modules/.bin/vite build
 
       - name: Deploy frontend via FTP
+        id: ftp_deploy
+        continue-on-error: true
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
           server: ${{ secrets.FTP_HOST }}
@@ -32,7 +34,20 @@ jobs:
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./frontend/dist/
           server-dir: /public_html/erp.mamkam/
-          dangerous-clean-slate: true
+          dangerous-clean-slate: false
+          timeout: 60000
+
+      - name: Deploy frontend via FTP (retry)
+        if: steps.ftp_deploy.outcome == 'failure'
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+        with:
+          server: ${{ secrets.FTP_HOST }}
+          username: ${{ secrets.FTP_USER }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./frontend/dist/
+          server-dir: /public_html/erp.mamkam/
+          dangerous-clean-slate: false
+          timeout: 60000
 
   deploy-backend:
     runs-on: ubuntu-latest
