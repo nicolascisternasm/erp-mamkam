@@ -175,10 +175,10 @@ export default function ModalVisita({ cot, onClose }) {
     /* Tabs intermedios (Checklist, Fotos) → Anterior + Siguiente */
     return (
       <>
-        <button className={btnGray} onClick={() => { checklistRef.current?.flushAll(); setTab(TABS[tabIdx - 1]) }}>
+        <button className={btnGray} onClick={async () => { await checklistRef.current?.flushAll(); setTab(TABS[tabIdx - 1]) }}>
           <ChevronLeft className="w-4 h-4" /> Anterior
         </button>
-        <button className={btnIndigo} onClick={() => { checklistRef.current?.flushAll(); setTab(TABS[tabIdx + 1]) }}>
+        <button className={btnIndigo} onClick={async () => { await checklistRef.current?.flushAll(); setTab(TABS[tabIdx + 1]) }}>
           Siguiente <ChevronRight className="w-4 h-4" />
         </button>
       </>
@@ -189,7 +189,7 @@ export default function ModalVisita({ cot, onClose }) {
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}
-      onClick={e => { if (e.target === e.currentTarget) { checklistRef.current?.flushAll(); onClose() } }}
+      onClick={async e => { if (e.target === e.currentTarget) { await checklistRef.current?.flushAll(); onClose() } }}
     >
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
 
@@ -213,7 +213,7 @@ export default function ModalVisita({ cot, onClose }) {
             )}
           </div>
           <button
-            onClick={() => { checklistRef.current?.flushAll(); onClose() }}
+            onClick={async () => { await checklistRef.current?.flushAll(); onClose() }}
             className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
           >
             <X className="w-5 h-5" />
@@ -227,7 +227,7 @@ export default function ModalVisita({ cot, onClose }) {
             return (
               <button
                 key={t}
-                onClick={() => { checklistRef.current?.flushAll(); setTab(t) }}
+                onClick={async () => { await checklistRef.current?.flushAll(); setTab(t) }}
                 className={`flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-t-lg transition-colors whitespace-nowrap border-b-2 -mb-px
                   ${tab === t
                     ? 'text-indigo-600 border-indigo-500 bg-indigo-50/60'
@@ -311,7 +311,6 @@ export default function ModalVisita({ cot, onClose }) {
 function FechasEstimadas({ visita }) {
   const [preguntas, setPreguntas]   = useState([])
   const [respuestas, setRespuestas] = useState({})
-  const timers = useRef({})
 
   useEffect(() => {
     async function load() {
@@ -341,20 +340,17 @@ function FechasEstimadas({ visita }) {
 
   function handleChange(pregunta, valor) {
     setRespuestas(prev => ({ ...prev, [pregunta.id]: valor }))
-    clearTimeout(timers.current[pregunta.id])
-    timers.current[pregunta.id] = setTimeout(() => {
-      supabase.from('visita_checklist').upsert(
-        {
-          visita_id:     visita.id,
-          pregunta_id:   pregunta.id,
-          pregunta_label: pregunta.label,
-          respuesta:     valor,
-          critical:      false,
-          unidad:        1,
-        },
-        { onConflict: 'visita_id,pregunta_id,unidad' }
-      )
-    }, 600)
+    supabase.from('visita_checklist').upsert(
+      {
+        visita_id:      visita.id,
+        pregunta_id:    pregunta.id,
+        pregunta_label: pregunta.label,
+        respuesta:      valor,
+        critical:       false,
+        unidad:         1,
+      },
+      { onConflict: 'visita_id,pregunta_id,unidad' }
+    )
   }
 
   if (preguntas.length === 0) return null
@@ -635,12 +631,13 @@ const TabChecklist = forwardRef(function TabChecklist({ visita }, ref) {
     timers.current[key] = { timeoutId: setTimeout(doUpsert, 600), flush: doUpsert }
   }
 
-  function flushAll() {
-    Object.values(timers.current).forEach(entry => {
+  async function flushAll() {
+    const promises = Object.values(timers.current).map(entry => {
       clearTimeout(entry.timeoutId)
-      entry.flush()
+      return entry.flush()
     })
     timers.current = {}
+    await Promise.all(promises)
   }
 
   useImperativeHandle(ref, () => ({ flushAll }))
