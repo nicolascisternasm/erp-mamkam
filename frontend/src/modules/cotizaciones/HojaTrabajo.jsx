@@ -16,6 +16,9 @@ export default function HojaTrabajo({ cot, user, empresa }) {
   const [usuarios,     setUsuarios]     = useState([])
   const [encargadoId,  setEncargadoId]  = useState(null)
 
+  const [activeTab, setActiveTab] = useState('hoja')
+  const [visita,    setVisita]    = useState(null)
+
   const fileInputRef = useRef(null)
   const debounceRef  = useRef(null)
   const pdfRef       = useRef(null)
@@ -65,6 +68,13 @@ export default function HojaTrabajo({ cot, user, empresa }) {
         .eq('activo', true)
         .order('nombre')
       setUsuarios(users || [])
+
+      const { data: visitaData } = await supabase
+        .from('visitas')
+        .select('fecha_agendada, productos, responsable_visita, instalador_nombre, notas_previas, resumen_ia, estado')
+        .eq('cotizacion_id', cot.id)
+        .maybeSingle()
+      setVisita(visitaData || null)
 
       setLoading(false)
     }
@@ -243,7 +253,25 @@ export default function HojaTrabajo({ cot, user, empresa }) {
         <DataRow label="Productos" value={productos} />
       </div>
 
+      {/* ── Tabs ── */}
+      <div className="flex border-b border-slate-100">
+        {[['hoja', 'Hoja'], ['visita', 'Visita']].map(([id, label]) => (
+          <button
+            key={id}
+            onClick={() => setActiveTab(id)}
+            className={`flex-1 py-2 text-xs font-semibold transition-colors ${
+              activeTab === id
+                ? 'text-indigo-600 border-b-2 border-indigo-500 bg-indigo-50/40'
+                : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       {/* ── Observaciones ── */}
+      {activeTab === 'hoja' && (<>
       <div className="px-4 py-3 border-b border-slate-100">
         <div className="flex items-center justify-between mb-1.5">
           <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Observaciones</span>
@@ -376,6 +404,66 @@ export default function HojaTrabajo({ cot, user, empresa }) {
           {generandoPdf ? 'Preparando...' : 'Descargar Hoja de Trabajo'}
         </button>
       </div>
+      </>)}
+
+      {/* ── Tab Visita ── */}
+      {activeTab === 'visita' && (
+        <div className="px-4 py-4 space-y-3">
+          {!visita ? (
+            <p className="text-xs text-slate-400 text-center py-6">No hay visita registrada para esta cotización.</p>
+          ) : (
+            <>
+              {/* Estado + datos clave */}
+              <div className="flex items-center gap-2">
+                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${VISITA_ESTADO_STYLES[visita.estado] || 'bg-slate-100 text-slate-600'}`}>
+                  {visita.estado}
+                </span>
+              </div>
+
+              <div className="space-y-1.5">
+                {visita.fecha_agendada && (
+                  <DataRow label="Fecha" value={visita.fecha_agendada} />
+                )}
+                {visita.responsable_visita && (
+                  <DataRow label="Responsable" value={visita.responsable_visita} />
+                )}
+                {visita.instalador_nombre && (
+                  <DataRow label="Instalador" value={visita.instalador_nombre} />
+                )}
+              </div>
+
+              {/* Chips de productos */}
+              {Array.isArray(visita.productos) && visita.productos.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {visita.productos.map(p => (
+                    <span key={p} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-100">
+                      {p}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* Notas previas */}
+              {visita.notas_previas && (
+                <div>
+                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">Notas previas</p>
+                  <p className="text-xs text-slate-600 bg-slate-50 rounded-lg p-2.5 leading-relaxed">{visita.notas_previas}</p>
+                </div>
+              )}
+
+              {/* Resumen IA */}
+              {visita.resumen_ia && (
+                <div className="pt-3 border-t border-slate-100">
+                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Resumen IA</p>
+                  <div className="text-xs text-slate-700 bg-slate-50 rounded-lg p-3 leading-relaxed whitespace-pre-wrap">
+                    {visita.resumen_ia}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
 
       {/* ── Div off-screen para html2canvas ── */}
       {pdfReady && (
@@ -460,6 +548,14 @@ export default function HojaTrabajo({ cot, user, empresa }) {
       )}
     </div>
   )
+}
+
+const VISITA_ESTADO_STYLES = {
+  agendada:   'bg-blue-100 text-blue-700',
+  visita:     'bg-indigo-100 text-indigo-700',
+  en_curso:   'bg-amber-100 text-amber-700',
+  completada: 'bg-emerald-100 text-emerald-700',
+  resumida:   'bg-violet-100 text-violet-700',
 }
 
 function DataRow({ label, value }) {
