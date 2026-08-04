@@ -1120,7 +1120,12 @@ function TabResumenIA({ visita }) {
       const { resumen: texto } = await apiClient.post(`/visitas/${visita.id}/resumen-ia`)
       setResumen(texto)
     } catch (err) {
-      setError(err.message || 'Error al generar el resumen')
+      const msg = err.message || ''
+      if (msg.includes('credit balance is too low') || msg.includes('429')) {
+        setError('⚠️ Los créditos de IA están agotados. Recarga en console.anthropic.com → Billing para continuar generando resúmenes.')
+      } else {
+        setError(msg || 'Error al generar el resumen')
+      }
     } finally {
       setGenerando(false)
     }
