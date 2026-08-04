@@ -293,6 +293,80 @@ export default function ModalVisita({ cot, onClose }) {
 }
 
 /* ═══════════════════════════════════════════════
+   FECHAS ESTIMADAS — sección reutilizable
+══════════════════════════════════════════════ */
+function FechasEstimadas({ visita }) {
+  const [preguntas, setPreguntas]   = useState([])
+  const [respuestas, setRespuestas] = useState({})
+  const timers = useRef({})
+
+  useEffect(() => {
+    async function load() {
+      const [{ data: preguntasDB }, { data: answers }] = await Promise.all([
+        supabase
+          .from('visita_preguntas')
+          .select('*')
+          .eq('empresa_id', visita.empresa_id)
+          .eq('producto', 'general')
+          .eq('activo', true)
+          .order('orden'),
+        supabase
+          .from('visita_checklist')
+          .select('pregunta_id, respuesta')
+          .eq('visita_id', visita.id)
+          .eq('unidad', 1),
+      ])
+      if (preguntasDB) setPreguntas(preguntasDB)
+      if (answers) {
+        const map = {}
+        answers.forEach(row => { map[row.pregunta_id] = row.respuesta })
+        setRespuestas(map)
+      }
+    }
+    void load()
+  }, [visita.id, visita.empresa_id])
+
+  function handleChange(pregunta, valor) {
+    setRespuestas(prev => ({ ...prev, [pregunta.id]: valor }))
+    clearTimeout(timers.current[pregunta.id])
+    timers.current[pregunta.id] = setTimeout(() => {
+      supabase.from('visita_checklist').upsert(
+        {
+          visita_id:     visita.id,
+          pregunta_id:   pregunta.id,
+          pregunta_label: pregunta.label,
+          respuesta:     valor,
+          critical:      false,
+          unidad:        1,
+        },
+        { onConflict: 'visita_id,pregunta_id,unidad' }
+      )
+    }, 600)
+  }
+
+  if (preguntas.length === 0) return null
+
+  return (
+    <div className="pt-4 border-t border-slate-100">
+      <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Fechas estimadas</p>
+      <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+        {preguntas.map(q => (
+          <div key={q.id} className="flex items-center justify-between gap-4">
+            <span className="text-xs text-slate-600 flex-1">{q.label}</span>
+            <input
+              type="date"
+              value={respuestas[q.id] || ''}
+              onChange={e => handleChange(q, e.target.value)}
+              className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/* ═══════════════════════════════════════════════
    TAB DATOS — modo lectura
 ══════════════════════════════════════════════ */
 function TabDatosLectura({ visita }) {
@@ -318,6 +392,7 @@ function TabDatosLectura({ visita }) {
           <p className="text-sm text-slate-700 bg-slate-50 rounded-lg p-3 leading-relaxed">{visita.notas_previas}</p>
         </div>
       )}
+      <FechasEstimadas visita={visita} />
     </div>
   )
 }
@@ -536,12 +611,9 @@ const TabChecklist = forwardRef(function TabChecklist({ visita, onProductosGuard
   })
   const gruposOtros = Array.from(gruposMap, ([key, items]) => ({ key, preguntas: items }))
 
-  /* Progreso: toldos cuentan cantidadToldos slots cada pregunta */
-  let totalSlots  = preguntasGenerales.length
+  /* Progreso: solo preguntas de producto (generales se muestran en tab Datos) */
+  let totalSlots  = 0
   let respondidas = 0
-  preguntasGenerales.forEach(q => {
-    if ((respuestas[`${q.id}_1`] || '').trim() !== '') respondidas++
-  })
   preguntasToldo.forEach(q => {
     for (let u = 1; u <= cantidadToldos; u++) {
       totalSlots++
@@ -609,26 +681,6 @@ const TabChecklist = forwardRef(function TabChecklist({ visita, onProductosGuard
               />
             </div>
           </div>
-
-          {/* Fechas generales — tarjeta compacta sin badge Crítica */}
-          {preguntasGenerales.length > 0 && (
-            <div className="bg-white border border-slate-200 rounded-xl p-4">
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Fechas estimadas</p>
-              <div className="space-y-3">
-                {preguntasGenerales.map(q => (
-                  <div key={q.id} className="flex items-center justify-between gap-4">
-                    <span className="text-xs text-slate-600 flex-1">{q.label}</span>
-                    <input
-                      type="date"
-                      value={respuestas[`${q.id}_1`] || ''}
-                      onChange={e => handleChange(q, e.target.value, 1)}
-                      className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
 
           {/* Grupo Toldo Vela — acordeón multi-unidad */}
           {preguntasToldo.length > 0 && (
