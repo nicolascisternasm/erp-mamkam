@@ -13,13 +13,13 @@ jobs:
 
       - uses: actions/setup-node@v3
         with:
-          node-version: '18'
+          node-version: '20'
 
       - name: Install and Build
         run: |
           cd frontend
-          npm install
-          npm run build
+          npm ci
+          npx vite build
 
       - name: Deploy frontend via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
