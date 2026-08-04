@@ -824,7 +824,8 @@ function TabFotos({ visita }) {
       const uploadId    = `${Date.now()}_${Math.random()}`
       const bucket      = file.type.startsWith('video/') ? 'visitas-audios' : 'visitas-fotos'
       const tipo        = file.type.startsWith('video/') ? 'video' : 'foto'
-      const storagePath = `${visita.id}/${Date.now()}_${file.name.replace(/\s/g, '_')}`
+      const sanitized   = file.name.replace(/\s/g, '_').replace(/[^a-zA-Z0-9._-]/g, '')
+      const storagePath = `${visita.id}/${Date.now()}_${sanitized}`
 
       setSubiendo(prev => [...prev, { id: uploadId, name: file.name }])
 
