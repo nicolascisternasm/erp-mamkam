@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { ClipboardCheck, Paperclip, Download, Trash2, Loader2, MapPin, MessageCircle } from 'lucide-react'
+import { ClipboardCheck, Paperclip, Download, Trash2, Loader2, MapPin, MessageCircle, ChevronDown, Film } from 'lucide-react'
 import { supabase } from '../../services/supabase'
 import { downloadPDF } from '../../utils/pdf'
 
@@ -16,8 +16,14 @@ export default function HojaTrabajo({ cot, user, empresa }) {
   const [usuarios,     setUsuarios]     = useState([])
   const [encargadoId,  setEncargadoId]  = useState(null)
 
-  const [activeTab, setActiveTab] = useState('hoja')
-  const [visita,    setVisita]    = useState(null)
+  const [activeTab,     setActiveTab]     = useState('hoja')
+  const [visita,        setVisita]        = useState(null)
+  const [checklist,     setChecklist]     = useState([])
+  const [checklistOpen, setChecklistOpen] = useState(false)
+  const [fotos,         setFotos]         = useState([])
+  const [fotosOpen,     setFotosOpen]     = useState(false)
+  const [lightbox,      setLightbox]      = useState(null)
+  const [loadingVisita, setLoadingVisita] = useState(false)
 
   const fileInputRef = useRef(null)
   const debounceRef  = useRef(null)
@@ -71,7 +77,7 @@ export default function HojaTrabajo({ cot, user, empresa }) {
 
       const { data: visitaData } = await supabase
         .from('visitas')
-        .select('fecha_agendada, productos, responsable_visita, instalador_nombre, notas_previas, resumen_ia, estado')
+        .select('id, fecha_agendada, productos, responsable_visita, instalador_nombre, notas_previas, resumen_ia, estado')
         .eq('cotizacion_id', cot.id)
         .maybeSingle()
       setVisita(visitaData || null)
@@ -80,6 +86,33 @@ export default function HojaTrabajo({ cot, user, empresa }) {
     }
     void init()
   }, [cot.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* ── Cargar checklist y fotos al abrir tab Visita ── */
+  useEffect(() => {
+    if (activeTab !== 'visita' || !visita?.id) return
+    async function loadVisitaData() {
+      setLoadingVisita(true)
+      const [{ data: cl }, { data: ft }] = await Promise.all([
+        supabase
+          .from('visita_checklist')
+          .select('respuesta, pregunta_label, critical, unidad')
+          .eq('visita_id', visita.id)
+          .not('respuesta', 'is', null)
+          .neq('respuesta', '')
+          .order('unidad')
+          .order('created_at'),
+        supabase
+          .from('visita_fotos')
+          .select('*')
+          .eq('visita_id', visita.id)
+          .order('created_at'),
+      ])
+      setChecklist(cl || [])
+      setFotos(ft || [])
+      setLoadingVisita(false)
+    }
+    void loadVisitaData()
+  }, [activeTab, visita?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── Observaciones con debounce 800ms ── */
   function handleObservaciones(value) {
@@ -421,15 +454,9 @@ export default function HojaTrabajo({ cot, user, empresa }) {
               </div>
 
               <div className="space-y-1.5">
-                {visita.fecha_agendada && (
-                  <DataRow label="Fecha" value={visita.fecha_agendada} />
-                )}
-                {visita.responsable_visita && (
-                  <DataRow label="Responsable" value={visita.responsable_visita} />
-                )}
-                {visita.instalador_nombre && (
-                  <DataRow label="Instalador" value={visita.instalador_nombre} />
-                )}
+                {visita.fecha_agendada && <DataRow label="Fecha"       value={visita.fecha_agendada} />}
+                {visita.responsable_visita && <DataRow label="Responsable" value={visita.responsable_visita} />}
+                {visita.instalador_nombre  && <DataRow label="Instalador"  value={visita.instalador_nombre} />}
               </div>
 
               {/* Chips de productos */}
@@ -451,17 +478,114 @@ export default function HojaTrabajo({ cot, user, empresa }) {
                 </div>
               )}
 
-              {/* Resumen IA */}
-              {visita.resumen_ia && (
-                <div className="pt-3 border-t border-slate-100">
-                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Resumen IA</p>
-                  <div className="text-xs text-slate-700 bg-slate-50 rounded-lg p-3 leading-relaxed whitespace-pre-wrap">
-                    {visita.resumen_ia}
-                  </div>
+              {/* ── Checklist (acordeón) ── */}
+              {loadingVisita ? (
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
                 </div>
+              ) : (
+                <>
+                  <div className="border-t border-slate-100 pt-3">
+                    <button
+                      type="button"
+                      onClick={() => setChecklistOpen(o => !o)}
+                      className="w-full flex items-center justify-between text-xs font-semibold text-slate-500 uppercase tracking-wide hover:text-slate-700 transition-colors"
+                    >
+                      <span>Checklist ({checklist.length})</span>
+                      <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${checklistOpen ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    {checklistOpen && (
+                      checklist.length === 0 ? (
+                        <p className="text-xs text-slate-400 mt-2">Sin respuestas registradas.</p>
+                      ) : (() => {
+                        const grupos = checklist.reduce((acc, item) => {
+                          const u = item.unidad || 1
+                          if (!acc[u]) acc[u] = []
+                          acc[u].push(item)
+                          return acc
+                        }, {})
+                        const unidades = Object.keys(grupos).map(Number).sort()
+                        const multiU   = unidades.length > 1 || unidades[0] > 1
+                        return (
+                          <div className="mt-2 space-y-3">
+                            {unidades.map(u => (
+                              <div key={u}>
+                                {multiU && (
+                                  <p className="text-xs font-semibold text-amber-700 mb-1.5">Toldo {u}</p>
+                                )}
+                                <div className="space-y-1.5">
+                                  {grupos[u].map((item, i) => (
+                                    <div key={i} className="bg-slate-50 rounded-lg px-2.5 py-2">
+                                      <div className="flex items-start justify-between gap-2">
+                                        <span className="text-xs text-slate-600 leading-snug flex-1">{item.pregunta_label}</span>
+                                        {item.critical && (
+                                          <span className="shrink-0 text-[10px] font-bold text-red-600 bg-red-50 border border-red-100 px-1.5 py-0.5 rounded">⚠ Crítica</span>
+                                        )}
+                                      </div>
+                                      <p className="text-xs font-medium text-slate-800 mt-0.5">{item.respuesta}</p>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )
+                      })()
+                    )}
+                  </div>
+
+                  {/* ── Fotos y Videos (acordeón) ── */}
+                  <div className="border-t border-slate-100 pt-3">
+                    <button
+                      type="button"
+                      onClick={() => setFotosOpen(o => !o)}
+                      className="w-full flex items-center justify-between text-xs font-semibold text-slate-500 uppercase tracking-wide hover:text-slate-700 transition-colors"
+                    >
+                      <span>Fotos y videos ({fotos.length})</span>
+                      <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${fotosOpen ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    {fotosOpen && (
+                      fotos.length === 0 ? (
+                        <p className="text-xs text-slate-400 mt-2">Sin fotos registradas.</p>
+                      ) : (
+                        <div className="mt-2 grid grid-cols-3 gap-1.5">
+                          {fotos.map(f => (
+                            f.tipo === 'video' ? (
+                              <div key={f.id} className="aspect-square bg-slate-100 rounded-lg flex flex-col items-center justify-center gap-1 px-1">
+                                <Film className="w-5 h-5 text-slate-400" />
+                                <span className="text-[9px] text-slate-500 text-center leading-tight truncate w-full text-center">{f.nombre_archivo}</span>
+                              </div>
+                            ) : (
+                              <button
+                                key={f.id}
+                                type="button"
+                                onClick={() => setLightbox(f.url)}
+                                className="aspect-square rounded-lg overflow-hidden bg-slate-100 hover:opacity-90 transition-opacity"
+                              >
+                                <img src={f.url} alt={f.nombre_archivo} className="w-full h-full object-cover" />
+                              </button>
+                            )
+                          ))}
+                        </div>
+                      )
+                    )}
+                  </div>
+                </>
               )}
             </>
           )}
+        </div>
+      )}
+
+      {/* ── Lightbox ── */}
+      {lightbox && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80"
+          onClick={() => setLightbox(null)}
+        >
+          <img src={lightbox} alt="" className="max-w-[90vw] max-h-[90vh] rounded-lg shadow-2xl" onClick={e => e.stopPropagation()} />
         </div>
       )}
 
