@@ -338,9 +338,9 @@ function FechasEstimadas({ visita }) {
     void load()
   }, [visita.id, visita.empresa_id])
 
-  function handleChange(pregunta, valor) {
+  async function handleChange(pregunta, valor) {
     setRespuestas(prev => ({ ...prev, [pregunta.id]: valor }))
-    supabase.from('visita_checklist').upsert(
+    const { error } = await supabase.from('visita_checklist').upsert(
       {
         visita_id:      visita.id,
         pregunta_id:    pregunta.id,
@@ -351,6 +351,8 @@ function FechasEstimadas({ visita }) {
       },
       { onConflict: 'visita_id,pregunta_id,unidad' }
     )
+    if (error) console.error('[FechasEstimadas] error guardando:', error)
+    else console.log('[FechasEstimadas] guardado OK:', pregunta.label, valor)
   }
 
   if (preguntas.length === 0) return null
