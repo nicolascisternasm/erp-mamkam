@@ -11,45 +11,25 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
+      - uses: actions/setup-node@v3
         with:
           node-version: '18'
 
-      - name: Install frontend dependencies
-        working-directory: ./frontend
-        run: npm ci
-
       - name: Build frontend
-        working-directory: ./frontend
-        run: ./node_modules/.bin/vite build
+        run: |
+          cd frontend
+          npm install
+          npm run build
 
-      - name: Deploy frontend via FTP
-        id: ftp_deploy
-        continue-on-error: true
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+      - name: Deploy via SSH rsync
+        uses: burnett01/rsync-deployments@7.0.1
         with:
-          server: ${{ secrets.FTP_HOST }}
-          username: ${{ secrets.FTP_USER }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: ./frontend/dist/
-          server-dir: /public_html/erp.mamkam/
-          dangerous-clean-slate: false
-          timeout: 60000
-          log-level: verbose
-
-      - name: Deploy frontend via FTP (retry)
-        if: steps.ftp_deploy.outcome == 'failure'
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
-        with:
-          server: ${{ secrets.FTP_HOST }}
-          username: ${{ secrets.FTP_USER }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: ./frontend/dist/
-          server-dir: /public_html/erp.mamkam/
-          dangerous-clean-slate: false
-          timeout: 60000
-          log-level: verbose
+          switches: -avzr --delete
+          path: frontend/dist/
+          remote_path: ${{ secrets.REMOTE_PATH }}
+          remote_host: ${{ secrets.FTP_SERVER }}
+          remote_user: ${{ secrets.FTP_USERNAME }}
+          remote_key: ${{ secrets.SSH_PRIVATE_KEY }}
 
   deploy-backend:
     runs-on: ubuntu-latest
