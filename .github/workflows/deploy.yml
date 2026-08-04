@@ -36,6 +36,7 @@ jobs:
           server-dir: /public_html/erp.mamkam/
           dangerous-clean-slate: false
           timeout: 60000
+          log-level: verbose
 
       - name: Deploy frontend via FTP (retry)
         if: steps.ftp_deploy.outcome == 'failure'
@@ -48,6 +49,7 @@ jobs:
           server-dir: /public_html/erp.mamkam/
           dangerous-clean-slate: false
           timeout: 60000
+          log-level: verbose
 
   deploy-backend:
     runs-on: ubuntu-latest
