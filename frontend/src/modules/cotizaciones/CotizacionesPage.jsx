@@ -191,7 +191,7 @@ export default function CotizacionesPage() {
     })
   }, [cotizaciones, search, filtroEstado, filtroVendedor, filtroFecha, filtroProductos])
 
-  const esActiva = (c) => c.estado === 'aprobada' || c.estado === 'en_ejecucion'
+  const esActiva = (c) => c.estado === 'aprobada' || c.estado === 'en_ejecucion' || c.estado === 'visita'
 
   const totalAprobadas = useMemo(() => filtered.filter(esActiva).length, [filtered])
   const totalOtras     = useMemo(() => filtered.filter(c => !esActiva(c)).length, [filtered])
