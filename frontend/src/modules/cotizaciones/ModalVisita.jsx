@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react'
-import { X, CalendarDays, ClipboardList, Image as ImageIcon, Bot, Loader2, ChevronRight, ChevronLeft, Check, ChevronDown, Upload, Trash2, Download } from 'lucide-react'
+import { X, CalendarDays, ClipboardList, Image as ImageIcon, Bot, Loader2, ChevronRight, ChevronLeft, ChevronDown, Upload, Trash2, Download } from 'lucide-react'
 import { supabase } from '../../services/supabase'
 import { useAuth } from '../auth/AuthContext'
 import { useApp } from '../../context/AppContext'
@@ -112,10 +112,6 @@ export default function ModalVisita({ cot, onClose }) {
       setTab('Checklist')
     }
     setGuardando(false)
-  }
-
-  function handleProductosGuardados(productos) {
-    setVisita(prev => ({ ...prev, productos }))
   }
 
   /* ── Render footer de navegación ── */
@@ -252,7 +248,7 @@ export default function ModalVisita({ cot, onClose }) {
 
               {tab === 'Checklist' && (
                 visita
-                  ? <TabChecklist ref={checklistRef} visita={visita} onProductosGuardados={handleProductosGuardados} />
+                  ? <TabChecklist ref={checklistRef} visita={visita} />
                   : <div className="flex flex-col items-center justify-center h-40 text-slate-400">
                       <ClipboardList className="w-8 h-8 mb-2 text-slate-300" />
                       <p className="text-sm">Primero crea una visita en el tab Datos.</p>
@@ -474,9 +470,9 @@ function TabDatosCrear({
 /* ═══════════════════════════════════════════════
    TAB CHECKLIST
 ══════════════════════════════════════════════ */
-const TabChecklist = forwardRef(function TabChecklist({ visita, onProductosGuardados }, ref) {
+const TabChecklist = forwardRef(function TabChecklist({ visita }, ref) {
   /* Fix 2: normalizar valores de visita.productos al montar (labels o snake_case) */
-  const [productosLocales, setProductosLocales] = useState(() => {
+  const [productosLocales] = useState(() => {
     if (!Array.isArray(visita.productos)) return []
     const validLabels = new Set(PRODUCTOS_OPCIONES.map(p => p.label))
     return visita.productos
@@ -496,7 +492,6 @@ const TabChecklist = forwardRef(function TabChecklist({ visita, onProductosGuard
     Array.isArray(visita.productos) && visita.productos.length > 0
   )
   const timers       = useRef({})
-  const saveRef      = useRef(null)
   const toldoSaveRef = useRef(null)
   const fetchIdRef   = useRef(0)  /* Fix 1: guard contra race conditions */
 
@@ -546,18 +541,6 @@ const TabChecklist = forwardRef(function TabChecklist({ visita, onProductosGuard
     }
     void load()
   }, [visita.id, visita.empresa_id, productosLocales])
-
-  function toggleProducto(label) {
-    const next = productosLocales.includes(label)
-      ? productosLocales.filter(x => x !== label)
-      : [...productosLocales, label]
-    setProductosLocales(next)
-    clearTimeout(saveRef.current)
-    saveRef.current = setTimeout(async () => {
-      await supabase.from('visitas').update({ productos: next }).eq('id', visita.id)
-      onProductosGuardados(next)
-    }, 500)
-  }
 
   function handleCantidadToldos(newCant) {
     setCantidadToldos(newCant)
@@ -629,37 +612,11 @@ const TabChecklist = forwardRef(function TabChecklist({ visita, onProductosGuard
   return (
     <div className="px-6 py-5 space-y-5">
 
-      {/* ── Selector de productos — siempre visible ── */}
-      <div className="flex flex-wrap gap-2 pb-3 border-b border-slate-100">
-        {PRODUCTOS_OPCIONES.map(p => {
-          const checked = productosLocales.includes(p.label)
-          return (
-            <button
-              key={p.id}
-              type="button"
-              onClick={() => toggleProducto(p.label)}
-              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-semibold border-2 transition-colors ${
-                checked
-                  ? 'border-indigo-400 bg-indigo-50 text-indigo-700'
-                  : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-700'
-              }`}
-            >
-              <span className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${
-                checked ? 'border-indigo-500 bg-indigo-500' : 'border-slate-300 bg-white'
-              }`}>
-                {checked && <Check className="w-2 h-2 text-white" strokeWidth={3.5} />}
-              </span>
-              {p.label}
-            </button>
-          )
-        })}
-      </div>
-
-      {/* ── Sin productos: estado vacío ── */}
+      {/* ── Sin productos: redirigir al tab Datos ── */}
       {productosLocales.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12">
           <ClipboardList className="w-10 h-10 mb-3 text-slate-200" />
-          <p className="text-sm font-medium text-slate-500">Selecciona al menos un producto</p>
+          <p className="text-sm font-medium text-slate-500">Ve al tab Datos para seleccionar los productos</p>
           <p className="text-xs text-slate-400 mt-1">Las preguntas del checklist aparecerán aquí.</p>
         </div>
       ) : loadingCL ? (
