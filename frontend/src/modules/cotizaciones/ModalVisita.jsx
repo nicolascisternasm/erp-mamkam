@@ -59,6 +59,7 @@ export default function ModalVisita({ cot, onClose }) {
   const [instalador,       setInstalador]       = useState('')
   const [notasPrevias,     setNotasPrevias]     = useState('')
   const [productosChecked, setProductosChecked] = useState([])
+  const [fechasEstimadas,  setFechasEstimadas]  = useState({})
 
   const trabajadoresActivos = (trabajadores || []).filter(t => t.estado === 'activo')
   const tabIdx = TABS.indexOf(tab)
@@ -108,6 +109,20 @@ export default function ModalVisita({ cot, onClose }) {
       .select()
       .single()
     if (!error && data) {
+      /* Guardar fechas estimadas si el usuario las completó antes de crear */
+      const filas = Object.entries(fechasEstimadas)
+        .filter(([, v]) => v)
+        .map(([pregunta_id, respuesta]) => ({
+          visita_id:      data.id,
+          pregunta_id,
+          pregunta_label: '',
+          respuesta,
+          critical:       false,
+          unidad:         1,
+        }))
+      if (filas.length > 0) {
+        await supabase.from('visita_checklist').upsert(filas, { onConflict: 'visita_id,pregunta_id,unidad' })
+      }
       setVisita(data)
       setTab('Checklist')
     }
@@ -212,7 +227,7 @@ export default function ModalVisita({ cot, onClose }) {
             return (
               <button
                 key={t}
-                onClick={() => setTab(t)}
+                onClick={() => { checklistRef.current?.flushAll(); setTab(t) }}
                 className={`flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-t-lg transition-colors whitespace-nowrap border-b-2 -mb-px
                   ${tab === t
                     ? 'text-indigo-600 border-indigo-500 bg-indigo-50/60'
@@ -243,6 +258,8 @@ export default function ModalVisita({ cot, onClose }) {
                       notasPrevias={notasPrevias}         setNotasPrevias={setNotasPrevias}
                       productosChecked={productosChecked} toggleProducto={toggleProducto}
                       trabajadores={trabajadoresActivos}
+                      empresaId={user?.empresa_id}
+                      fechasEstimadas={fechasEstimadas}   setFechasEstimadas={setFechasEstimadas}
                     />
               )}
 
@@ -394,6 +411,46 @@ function TabDatosLectura({ visita }) {
 }
 
 /* ═══════════════════════════════════════════════
+   FECHAS ESTIMADAS — versión creación (sin visita_id)
+══════════════════════════════════════════════ */
+function FechasEstimadasCrear({ empresaId, valores, onChange }) {
+  const [preguntas, setPreguntas] = useState([])
+
+  useEffect(() => {
+    if (!empresaId) return
+    supabase
+      .from('visita_preguntas')
+      .select('*')
+      .eq('empresa_id', empresaId)
+      .eq('producto', 'general')
+      .eq('activo', true)
+      .order('orden')
+      .then(({ data }) => { if (data) setPreguntas(data) })
+  }, [empresaId])
+
+  if (preguntas.length === 0) return null
+
+  return (
+    <div className="pt-4 border-t border-slate-100">
+      <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Fechas estimadas</p>
+      <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+        {preguntas.map(q => (
+          <div key={q.id} className="flex items-center justify-between gap-4">
+            <span className="text-xs text-slate-600 flex-1">{q.label}</span>
+            <input
+              type="date"
+              value={valores[q.id] || ''}
+              onChange={e => onChange({ ...valores, [q.id]: e.target.value })}
+              className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/* ═══════════════════════════════════════════════
    TAB DATOS — formulario de creación
 ══════════════════════════════════════════════ */
 function TabDatosCrear({
@@ -403,6 +460,8 @@ function TabDatosCrear({
   notasPrevias, setNotasPrevias,
   productosChecked, toggleProducto,
   trabajadores,
+  empresaId,
+  fechasEstimadas, setFechasEstimadas,
 }) {
   return (
     <div className="px-6 py-5 space-y-5">
@@ -463,6 +522,12 @@ function TabDatosCrear({
           className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 resize-none"
         />
       </Field>
+
+      <FechasEstimadasCrear
+        empresaId={empresaId}
+        valores={fechasEstimadas}
+        onChange={setFechasEstimadas}
+      />
     </div>
   )
 }
@@ -834,6 +899,7 @@ function TabFotos({ visita }) {
         .upload(storagePath, file, { upsert: false, contentType: file.type })
 
       if (upErr) {
+        console.error('[TabFotos] upload error:', upErr)
         setError(`Error subiendo "${file.name}": ${upErr.message}`)
         setSubiendo(prev => prev.filter(s => s.id !== uploadId))
         continue
