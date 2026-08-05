@@ -9,7 +9,7 @@ function getToken() {
 }
 
 async function request(method, path, body) {
-  const url = `${BASE_URL}${path}`
+  const url = `${BASE_URL}/${path.replace(/^\/+/, '')}`
   console.log('[apiClient] request:', method, url, 'token existe:', !!getToken())
   const token = getToken()
   const headers = { 'Content-Type': 'application/json' }
