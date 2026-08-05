@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react'
-import { X, CalendarDays, ClipboardList, Image as ImageIcon, Bot, Loader2, ChevronRight, ChevronLeft, ChevronDown, Upload, Trash2, Download } from 'lucide-react'
+import { X, CalendarDays, ClipboardList, Image as ImageIcon, Bot, Loader2, ChevronRight, ChevronLeft, ChevronDown, Upload, Trash2, Download, FileText } from 'lucide-react'
 import { supabase } from '../../services/supabase'
 import { useAuth } from '../auth/AuthContext'
 import { useApp } from '../../context/AppContext'
@@ -849,6 +849,15 @@ function StepperToldos({ cantidad, onChange }) {
 // NOTA: bucket 'visitas-audios' se reutiliza para VIDEO de visitas (no audio).
 // Nombre heredado de una creación manual en Supabase; revisar si conviene
 // migrar a un bucket 'visitas-videos' más adelante.
+
+function docIconColor(nombre) {
+  const ext = nombre?.split('.').pop()?.toLowerCase()
+  if (ext === 'pdf') return 'text-red-400'
+  if (ext === 'doc' || ext === 'docx') return 'text-blue-400'
+  if (ext === 'xls' || ext === 'xlsx') return 'text-green-500'
+  return 'text-slate-400'
+}
+
 function TabFotos({ visita }) {
   const { user }      = useAuth()
   const [archivos,    setArchivos]    = useState([])
@@ -879,15 +888,17 @@ function TabFotos({ visita }) {
     setError(null)
 
     for (const file of files) {
-      const maxMB = file.type.startsWith('video/') ? 200 : 10
+      const isVideo = file.type.startsWith('video/')
+      const isImage = file.type.startsWith('image/')
+      const maxMB   = isVideo ? 200 : isImage ? 10 : 20
       if (file.size > maxMB * 1024 * 1024) {
         setError(`"${file.name}" excede el límite de ${maxMB} MB y no fue subido.`)
         continue
       }
 
       const uploadId    = `${Date.now()}_${Math.random()}`
-      const bucket      = file.type.startsWith('video/') ? 'visitas-audios' : 'visitas-fotos'
-      const tipo        = file.type.startsWith('video/') ? 'video' : 'foto'
+      const bucket      = isVideo ? 'visitas-audios'     : isImage ? 'visitas-fotos' : 'visitas-documentos'
+      const tipo        = isVideo ? 'video'               : isImage ? 'foto'          : 'documento'
       const sanitized   = file.name.replace(/\s/g, '_').replace(/[^a-zA-Z0-9._-]/g, '')
       const storagePath = `${visita.id}/${Date.now()}_${sanitized}`
 
@@ -930,7 +941,7 @@ function TabFotos({ visita }) {
   async function handleEliminar(archivo) {
     if (!window.confirm(`¿Eliminar "${archivo.nombre_archivo}"?`)) return
 
-    const bucket    = archivo.tipo === 'video' ? 'visitas-audios' : 'visitas-fotos'
+    const bucket    = archivo.tipo === 'video' ? 'visitas-audios' : archivo.tipo === 'documento' ? 'visitas-documentos' : 'visitas-fotos'
     const urlParts  = archivo.url.split(`/${bucket}/`)
     const storagePath = urlParts[1]
 
@@ -946,19 +957,19 @@ function TabFotos({ visita }) {
 
       {/* ── Barra superior ── */}
       <div className="flex items-center justify-between mb-5">
-        <p className="text-xs text-slate-400">Fotos máx. 10 MB · Videos máx. 200 MB</p>
+        <p className="text-xs text-slate-400">Fotos máx. 10 MB · Videos máx. 200 MB · Documentos máx. 20 MB</p>
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
           className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 transition-colors"
         >
           <Upload className="w-4 h-4" />
-          Subir fotos o videos
+          Subir archivos
         </button>
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/*,video/*"
+          accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx"
           multiple
           className="hidden"
           onChange={handleSubir}
@@ -992,7 +1003,7 @@ function TabFotos({ visita }) {
       ) : archivos.length === 0 && subiendo.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16">
           <ImageIcon className="w-10 h-10 mb-3 text-slate-200" />
-          <p className="text-sm font-medium text-slate-500">Aún no hay fotos ni videos de esta visita</p>
+          <p className="text-sm font-medium text-slate-500">Aún no hay fotos, videos ni documentos en esta visita</p>
         </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -1000,6 +1011,19 @@ function TabFotos({ visita }) {
             <div key={a.id} className="relative group rounded-xl overflow-hidden bg-slate-100 aspect-square">
               {a.tipo === 'video' ? (
                 <video src={a.url} controls className="w-full h-full object-cover" />
+              ) : a.tipo === 'documento' ? (
+                <a
+                  href={a.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="w-full h-full flex flex-col items-center justify-center gap-2 p-3 hover:bg-slate-200 transition-colors"
+                >
+                  <FileText className={`w-10 h-10 ${docIconColor(a.nombre_archivo)}`} />
+                  <span className="text-[11px] font-semibold text-slate-600 text-center line-clamp-2 leading-tight px-1">{a.nombre_archivo}</span>
+                  <span className="mt-auto px-2 py-0.5 rounded text-[10px] font-bold bg-slate-200 text-slate-500 uppercase tracking-wide">
+                    {a.nombre_archivo?.split('.').pop()}
+                  </span>
+                </a>
               ) : (
                 <img
                   src={a.url}
@@ -1011,7 +1035,7 @@ function TabFotos({ visita }) {
               <button
                 type="button"
                 onClick={() => handleEliminar(a)}
-                className="absolute top-2 right-2 w-7 h-7 rounded-lg bg-white/80 hover:bg-red-50 text-slate-500 hover:text-red-600 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+                className="absolute top-2 right-2 z-10 w-7 h-7 rounded-lg bg-white/80 hover:bg-red-50 text-slate-500 hover:text-red-600 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
               >
                 <Trash2 className="w-3.5 h-3.5" />
               </button>
