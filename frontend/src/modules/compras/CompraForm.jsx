@@ -59,7 +59,7 @@ export default function CompraForm() {
 
   const isEdit = Boolean(id)
   const existing = isEdit ? compras.find((oc) => oc.id === id) : null
-  const aprobadas = cotizaciones.filter((c) => c.estado === 'aprobada')
+  const disponibles = cotizaciones.filter((c) => ['aprobada', 'en_ejecucion'].includes(c.estado))
 
   const [form, setForm] = useState({
     cotizacionId: '', cotizacionNumero: '', cotizacionCliente: '',
@@ -139,7 +139,7 @@ export default function CompraForm() {
   /* ── Validación ──────────────────────────────────────────────── */
   const validate = () => {
     const e = {}
-    if (!form.cotizacionId) e.cotizacion = 'Debes seleccionar una cotización aprobada'
+    if (!form.cotizacionId) e.cotizacion = 'Debes seleccionar una cotización aprobada o en ejecución'
     if (!form.proveedorId)  e.proveedor  = 'Debes seleccionar un proveedor'
     if (form.items.some(i => !i.producto.trim())) e.items = 'Todos los productos deben tener nombre'
     setErrors(e)
@@ -223,10 +223,10 @@ export default function CompraForm() {
                     <X className="w-4 h-4" />
                   </button>
                 </div>
-              ) : aprobadas.length === 0 ? (
+              ) : disponibles.length === 0 ? (
                 <div className="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 p-3">
                   <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-                  <p className="text-sm text-amber-700">No hay cotizaciones en estado <strong>Aprobada</strong>. Aprueba una cotización primero.</p>
+                  <p className="text-sm text-amber-700">No hay cotizaciones en estado <strong>Aprobada</strong> o <strong>En ejecución</strong>. Aprueba una cotización primero.</p>
                 </div>
               ) : (
                 <>
@@ -242,7 +242,7 @@ export default function CompraForm() {
                   </div>
                   <div className="rounded-xl border border-slate-200 overflow-hidden">
                     <div className="max-h-48 overflow-y-auto divide-y divide-slate-50">
-                      {aprobadas
+                      {disponibles
                         .filter(c =>
                           !cotSearch ||
                           c.numero.toLowerCase().includes(cotSearch.toLowerCase()) ||
@@ -263,7 +263,7 @@ export default function CompraForm() {
                       }
                     </div>
                     <div className="px-4 py-1.5 bg-slate-50 border-t text-xs text-slate-400 text-right">
-                      {aprobadas.length} cotización{aprobadas.length !== 1 ? 'es' : ''} aprobada{aprobadas.length !== 1 ? 's' : ''}
+                      {disponibles.length} cotización{disponibles.length !== 1 ? 'es' : ''} disponible{disponibles.length !== 1 ? 's' : ''}
                     </div>
                   </div>
                 </>

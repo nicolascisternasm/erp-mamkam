@@ -464,7 +464,7 @@ export default function ComprasPage() {
   })
 
   const sinOC = cotizaciones.filter(
-    (c) => c.estado === 'aprobada' && !compras.some((oc) => oc.cotizacionId === c.id)
+    (c) => ['aprobada', 'en_ejecucion'].includes(c.estado) && !compras.some((oc) => oc.cotizacionId === c.id)
   )
 
   return (
@@ -488,8 +488,8 @@ export default function ComprasPage() {
           <div className="flex-1">
             <p className="text-sm font-medium text-amber-800">
               {sinOC.length === 1
-                ? `Tienes 1 cotización aprobada sin OC generada`
-                : `Tienes ${sinOC.length} cotizaciones aprobadas sin OC generada`}
+                ? `Tienes 1 cotización aprobada o en ejecución sin OC generada`
+                : `Tienes ${sinOC.length} cotizaciones aprobadas o en ejecución sin OC generada`}
             </p>
             <div className="flex flex-wrap gap-1.5 mt-2">
               {sinOC.map(c => (
