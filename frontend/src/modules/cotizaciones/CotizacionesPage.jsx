@@ -38,7 +38,7 @@ function buildPublicUrl(c) {
   return `${base}/ver?d=${btoa(unescape(encodeURIComponent(JSON.stringify(lean))))}`
 }
 
-const ESTADOS = ['todos', 'borrador', 'enviada', 'visita', 'aprobada', 'en_ejecucion', 'cerrada', 'rechazada', 'perdida']
+const ESTADOS = ['todos', 'borrador', 'enviada', 'visita', 'aprobada', 'en_ejecucion', 'ejecutada', 'cerrada', 'rechazada', 'perdida']
 
 const PRODUCTO_CHIP = {
   'CAUCHO CONTINUO':  { cls: 'bg-blue-100 text-blue-700',     label: 'Caucho' },
@@ -191,7 +191,7 @@ export default function CotizacionesPage() {
     })
   }, [cotizaciones, search, filtroEstado, filtroVendedor, filtroFecha, filtroProductos])
 
-  const esActiva = (c) => c.estado === 'aprobada' || c.estado === 'en_ejecucion' || c.estado === 'visita'
+  const esActiva = (c) => c.estado === 'aprobada' || c.estado === 'en_ejecucion' || c.estado === 'ejecutada' || c.estado === 'visita'
 
   const totalAprobadas = useMemo(() => filtered.filter(esActiva).length, [filtered])
   const totalOtras     = useMemo(() => filtered.filter(c => !esActiva(c)).length, [filtered])

@@ -17,6 +17,7 @@ import { supabase } from '../../services/supabase'
 import ComprobantesCotizacion from './ComprobantesCotizacion'
 import OrdenesCompraCliente from './OrdenesCompraCliente'
 import ModalVisita from './ModalVisita'
+import ModalEnviarEjecucion from './ModalEnviarEjecucion'
 import HojaTrabajo from './HojaTrabajo'
 
 function buildPublicUrl(cot, empresa) {
@@ -58,10 +59,10 @@ function buildWhatsAppMessage(cot, empresa) {
   ].join('\n')
 }
 
-const PIPELINE_FLOW = ['borrador', 'enviada', 'visita', 'aprobada', 'en_ejecucion', 'cerrada']
+const PIPELINE_FLOW = ['borrador', 'enviada', 'visita', 'aprobada', 'en_ejecucion', 'ejecutada', 'cerrada']
 const PIPELINE_LABELS = {
   borrador: 'Borrador', enviada: 'Enviada', visita: 'Visita',
-  aprobada: 'Aprobada', en_ejecucion: 'En ejecución', cerrada: 'Cerrada',
+  aprobada: 'Aprobada', en_ejecucion: 'En ejecución', ejecutada: 'Ejecutada', cerrada: 'Cerrada',
   rechazada: 'Rechazada', perdida: 'Perdida',
 }
 const PIPELINE_COLORS = {
@@ -70,6 +71,7 @@ const PIPELINE_COLORS = {
   visita:       { active: 'bg-purple-600 text-white',  done: 'bg-purple-100 text-purple-400',  pending: 'bg-slate-100 text-slate-300' },
   aprobada:     { active: 'bg-emerald-600 text-white', done: 'bg-emerald-100 text-emerald-400',pending: 'bg-slate-100 text-slate-300' },
   en_ejecucion: { active: 'bg-amber-500 text-white',   done: 'bg-amber-100 text-amber-400',    pending: 'bg-slate-100 text-slate-300' },
+  ejecutada:    { active: 'bg-teal-600 text-white',    done: 'bg-teal-100 text-teal-400',      pending: 'bg-slate-100 text-slate-300' },
   cerrada:      { active: 'bg-emerald-800 text-white', done: 'bg-slate-100 text-slate-300',    pending: 'bg-slate-100 text-slate-300' },
   rechazada:    { active: 'bg-red-500 text-white' },
   perdida:      { active: 'bg-red-800 text-white' },
@@ -98,6 +100,7 @@ export default function CotizacionDetalle() {
   const [confirmVolverEnviada,  setConfirmVolverEnviada]  = useState(false)
   const [confirmVolverBorrador, setConfirmVolverBorrador] = useState(false)
   const [modalVisita, setModalVisita] = useState(false)
+  const [modalEnviarEjecucion, setModalEnviarEjecucion] = useState(false)
   const [asociarFacturaModal, setAsociarFacturaModal] = useState(null)
   const [facturasLoaded, setFacturasLoaded]           = useState([])
   const [facturasLoading, setFacturasLoading]         = useState(false)
@@ -279,11 +282,21 @@ export default function CotizacionDetalle() {
     navigate('/compras')
   }
 
+  const handleMarcarEjecutada = () => {
+    changeCotizacionStatus(cot.id, 'ejecutada')
+    setModalEnviarEjecucion(true)
+  }
+
+  const handleEjecucionEnviada = () => {
+    updateCotizacion(cot.id, { emailEjecucionEnviado: true })
+    showToast('success', 'Notificación de término enviada correctamente')
+  }
+
   const anyLoading = loadingPDF || loadingEmail || loadingWA
 
   /* ── Render ───────────────────────────────────────────── */
 
-  const showHojaTrabajo = ['aprobada', 'en_ejecucion', 'cerrada'].includes(cot.estado)
+  const showHojaTrabajo = ['aprobada', 'en_ejecucion', 'ejecutada', 'cerrada'].includes(cot.estado)
 
   const inner = (
     <>
@@ -468,14 +481,36 @@ export default function CotizacionDetalle() {
             {cot.estado === 'en_ejecucion' && (
               <div className="flex flex-col gap-1">
                 <p className="text-xs text-slate-400 sm:text-right">Proyecto en ejecución</p>
-                <button onClick={() => setConfirmCerrar(true)} className="btn-primary">
-                  <CheckCircle className="w-4 h-4" /> Cerrar Proyecto
+                <button onClick={handleMarcarEjecutada} className="btn-primary">
+                  <CheckCircle className="w-4 h-4" /> Marcar como Ejecutada
                 </button>
                 <button
                   onClick={() => setConfirmVolverAprobada(true)}
                   className="mt-1 self-start px-2.5 py-1 text-xs font-medium rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 transition-colors flex items-center gap-1"
                 >
                   ← Volver a Aprobada
+                </button>
+              </div>
+            )}
+            {cot.estado === 'ejecutada' && (
+              <div className="flex flex-col gap-1">
+                <p className="text-xs text-slate-400 sm:text-right">Proyecto ejecutado</p>
+                {!cot.emailEjecucionEnviado && (
+                  <button
+                    onClick={() => setModalEnviarEjecucion(true)}
+                    className="btn-secondary flex items-center gap-2 text-teal-600 border-teal-200 hover:bg-teal-50"
+                  >
+                    <Mail className="w-4 h-4" /> Enviar notificación de término
+                  </button>
+                )}
+                <button onClick={() => setConfirmCerrar(true)} className="btn-primary">
+                  <CheckCircle className="w-4 h-4" /> Cerrar Proyecto
+                </button>
+                <button
+                  onClick={() => changeCotizacionStatus(cot.id, 'en_ejecucion')}
+                  className="mt-1 self-start px-2.5 py-1 text-xs font-medium rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 transition-colors flex items-center gap-1"
+                >
+                  ← Volver a En ejecución
                 </button>
               </div>
             )}
@@ -1100,6 +1135,16 @@ export default function CotizacionDetalle() {
       {/* Modal Visita */}
       {modalVisita && cot && (
         <ModalVisita cot={cot} onClose={() => setModalVisita(false)} />
+      )}
+
+      {/* Modal Enviar Ejecución */}
+      {modalEnviarEjecucion && cot && (
+        <ModalEnviarEjecucion
+          cot={cot}
+          open={modalEnviarEjecucion}
+          onClose={() => setModalEnviarEjecucion(false)}
+          onSuccess={handleEjecucionEnviada}
+        />
       )}
     </>
   )

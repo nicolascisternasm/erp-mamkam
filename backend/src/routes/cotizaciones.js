@@ -268,4 +268,167 @@ router.post('/:id/enviar-email', async (req, res) => {
   }
 })
 
+/* ── POST /:id/enviar-email-ejecucion ──────────────────────────── */
+router.post('/:id/enviar-email-ejecucion', async (req, res) => {
+  try {
+    const { id } = req.params
+    const { destinatario, mensaje, fotosIds = [], comprobantesIncluidos = [] } = req.body
+
+    if (!destinatario) {
+      return res.status(400).json({ success: false, error: { message: 'El destinatario es requerido' } })
+    }
+
+    const { data: cot, error: cotErr } = await supabase
+      .from('cotizaciones')
+      .select('*')
+      .eq('id', id)
+      .single()
+    if (cotErr || !cot) return res.status(404).json({ success: false, error: { message: 'Cotización no encontrada' } })
+
+    // Calcular saldo en backend a partir de DB
+    const condiciones       = cot.condiciones_pago    ?? []
+    const pagosComprobantes = cot.pagos_comprobantes  ?? []
+    const condicionesConSaldo = condiciones.map(cp => {
+      const monto  = cp.monto || Math.round((cot.total || 0) * (cp.porcentaje || 0) / 100)
+      const pagado = pagosComprobantes
+        .filter(p => String(p.condicion_id) === String(cp.id))
+        .reduce((s, p) => s + (Number(p.monto) || 0), 0)
+      return { descripcion: cp.descripcion, monto, pagado, saldo: monto - pagado }
+    })
+    const totalPagado = pagosComprobantes.reduce((s, p) => s + (Number(p.monto) || 0), 0)
+    const totalSaldo  = (cot.total || 0) - totalPagado
+
+    // Descargar fotos seleccionadas
+    const attachments = []
+    if (fotosIds.length) {
+      const { data: fotos } = await supabase
+        .from('visita_fotos')
+        .select('id, url, nombre_archivo')
+        .in('id', fotosIds)
+      for (const foto of (fotos || [])) {
+        try {
+          const resp = await fetch(foto.url)
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+          const buf  = Buffer.from(await resp.arrayBuffer())
+          attachments.push({ filename: foto.nombre_archivo || `foto-${foto.id}.jpg`, content: buf })
+        } catch (e) {
+          console.error(`[enviar-email-ejecucion] Error descargando foto ${foto.id}:`, e.message)
+        }
+      }
+    }
+
+    // Descargar comprobantes seleccionados
+    for (const idx of comprobantesIncluidos) {
+      const comp = pagosComprobantes[idx]
+      if (!comp?.url) continue
+      try {
+        const resp = await fetch(comp.url)
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+        const buf  = Buffer.from(await resp.arrayBuffer())
+        attachments.push({ filename: comp.nombre_archivo || `comprobante-${idx + 1}.pdf`, content: buf })
+      } catch (e) {
+        console.error(`[enviar-email-ejecucion] Error descargando comprobante ${idx}:`, e.message)
+      }
+    }
+
+    // Construir HTML
+    const saldoRows = condicionesConSaldo.map(c => `
+      <tr style="border-bottom:1px solid #e2e8f0">
+        <td style="padding:8px 12px;font-size:13px;color:#475569">${c.descripcion || '—'}</td>
+        <td style="padding:8px 12px;font-size:13px;color:#475569;text-align:right">${formatCLP(c.monto)}</td>
+        <td style="padding:8px 12px;font-size:13px;color:#059669;text-align:right">${formatCLP(c.pagado)}</td>
+        <td style="padding:8px 12px;font-size:13px;font-weight:600;color:${c.saldo > 0 ? '#dc2626' : '#059669'};text-align:right">${formatCLP(c.saldo)}</td>
+      </tr>`).join('')
+
+    const mensajeHtml = (mensaje || '').replace(/\n/g, '<br>')
+    const htmlBody = `<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#f1f5f9;font-family:Arial,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:32px 0">
+  <tr><td align="center">
+    <table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,0.08)">
+      <tr>
+        <td style="background:#0d9488;padding:28px 36px">
+          <div style="color:#fff;font-size:22px;font-weight:900">Proyecto Finalizado</div>
+          <div style="color:#99f6e4;font-size:13px;margin-top:4px">Cotización ${cot.numero} · ${cot.cliente || ''}</div>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:28px 36px 16px">
+          <div style="font-size:14px;color:#334155;line-height:1.7">${mensajeHtml}</div>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:0 36px 28px">
+          <p style="margin:0 0 12px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#94a3b8">Detalle de saldo pendiente</p>
+          <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden">
+            <thead>
+              <tr style="background:#f8fafc">
+                <th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase">Condición</th>
+                <th style="padding:10px 12px;text-align:right;font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase">Total</th>
+                <th style="padding:10px 12px;text-align:right;font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase">Pagado</th>
+                <th style="padding:10px 12px;text-align:right;font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase">Saldo</th>
+              </tr>
+            </thead>
+            <tbody>${saldoRows || '<tr><td colspan="4" style="padding:12px;color:#94a3b8;text-align:center;font-size:13px">Sin condiciones de pago definidas</td></tr>'}</tbody>
+            <tfoot>
+              <tr style="background:#f8fafc;border-top:2px solid #e2e8f0">
+                <td style="padding:10px 12px;font-weight:700;font-size:14px;color:#0f172a" colspan="2">Total pendiente</td>
+                <td style="padding:10px 12px;text-align:right;font-weight:700;color:#059669">${formatCLP(totalPagado)}</td>
+                <td style="padding:10px 12px;text-align:right;font-weight:900;font-size:16px;color:${totalSaldo > 0 ? '#dc2626' : '#059669'}">${formatCLP(totalSaldo)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </td>
+      </tr>
+      <tr>
+        <td style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:20px 36px;text-align:center">
+          <p style="margin:0;font-size:13px;color:#64748b;font-weight:600">Equipo MAMKAM &nbsp;|&nbsp; contacto@mamkam.cl</p>
+        </td>
+      </tr>
+    </table>
+  </td></tr>
+</table>
+</body>
+</html>`
+
+    if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
+      await supabase.from('cotizaciones').update({
+        email_ejecucion_enviado: true,
+        email_ejecucion_fecha:   new Date().toISOString(),
+        email_ejecucion_mensaje: mensaje,
+      }).eq('id', id)
+      return res.json({ success: true, modo: 'sin_smtp', warning: 'SMTP no configurado: estado actualizado pero email no enviado.' })
+    }
+
+    try {
+      const transporter = createTransporter()
+      await transporter.sendMail({
+        from:        `"MAMKAM" <${process.env.SMTP_USER}>`,
+        to:          destinatario,
+        cc:          'contacto@mamkam.cl',
+        subject:     `Proyecto finalizado — Cotización ${cot.numero} — MAMKAM`,
+        html:        htmlBody,
+        attachments,
+      })
+    } catch (mailErr) {
+      console.error('[enviar-email-ejecucion] Error nodemailer:', mailErr.message)
+      return res.status(500).json({ success: false, error: { message: `Error al enviar email: ${mailErr.message}` } })
+    }
+
+    await supabase.from('cotizaciones').update({
+      email_ejecucion_enviado: true,
+      email_ejecucion_fecha:   new Date().toISOString(),
+      email_ejecucion_mensaje: mensaje,
+    }).eq('id', id)
+
+    return res.json({ success: true, mensaje: 'Correo de término enviado correctamente' })
+
+  } catch (err) {
+    console.error('[enviar-email-ejecucion] ERROR:', err.message, err.stack)
+    return res.status(500).json({ success: false, error: { message: err.message } })
+  }
+})
+
 module.exports = router
