@@ -51,7 +51,7 @@ export default function ProyectoForm() {
 
   // Cotizaciones aprobadas y compras desde el contexto
   const cotizaciones = useMemo(
-    () => allCotizaciones.filter((c) => c.estado === 'aprobada'),
+    () => allCotizaciones.filter((c) => ['aprobada', 'en_ejecucion'].includes(c.estado)),
     [allCotizaciones],
   )
   const compras = allCompras

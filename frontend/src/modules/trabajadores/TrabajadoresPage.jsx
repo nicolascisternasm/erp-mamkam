@@ -268,7 +268,7 @@ function AdelantosBanosTab({ trabajadores }) {
 
   const periodo = `${anio}-${String(mes).padStart(2, '0')}`
   const anios   = [hoy.getFullYear(), hoy.getFullYear() - 1, hoy.getFullYear() - 2]
-  const proyectosActivos = (proyectos || []).filter((p) => p.estado !== 'cancelado')
+  const proyectosActivos = (proyectos || []).filter((p) => p.estado !== 'cancelado' && !p.archivado)
 
   const cargar = useCallback(async () => {
     setLoading(true)

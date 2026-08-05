@@ -13,6 +13,7 @@ const COLORES_PROYECTO = [
 ]
 
 const ESTADO_CONFIG = {
+  borrador:      { label: 'Borrador',      cls: 'bg-slate-100 text-slate-500'     },
   planificacion: { label: 'Planificación', cls: 'bg-slate-100 text-slate-600'     },
   ejecucion:     { label: 'Ejecución',     cls: 'bg-emerald-100 text-emerald-700' },
   cierre:        { label: 'Cierre',        cls: 'bg-blue-100 text-blue-700'       },
@@ -48,7 +49,7 @@ export default function ProyectosPage() {
   const [filtroResponsable, setFiltroResponsable] = useState('todos')
   const [ganttExpandido, setGanttExpandido] = useState(true)
   const [datosPlanificacion, setDatosPlanificacion] = useState({ proyectos: [], tareas: [] })
-  const [mostrarCerrados, setMostrarCerrados] = useState(false)
+  const [mostrarArchivados, setMostrarArchivados] = useState(false)
 
   useEffect(() => {
     apiClient.get('/proyectos')
@@ -77,17 +78,18 @@ export default function ProyectosPage() {
     const q = search.toLowerCase()
     return proyectos.filter((p) => {
       if (q && !p.nombre?.toLowerCase().includes(q) && !p.cliente?.toLowerCase().includes(q)) return false
+      if (mostrarArchivados && !p.archivado) return false
+      if (!mostrarArchivados && p.archivado) return false
       if (filtroEstado !== 'todos' && p.estado !== filtroEstado) return false
       if (filtroEstado !== 'cancelado' && p.estado === 'cancelado') return false
-      if (!mostrarCerrados && p.estado === 'cerrado') return false
       if (filtroResponsable !== 'todos' && p.responsableId !== filtroResponsable) return false
       return true
     })
-  }, [proyectos, search, filtroEstado, filtroResponsable, mostrarCerrados])
+  }, [proyectos, search, filtroEstado, filtroResponsable, mostrarArchivados])
 
   const stats = useMemo(() => {
-    const total         = proyectos.length
-    const activos       = proyectos.filter((p) => p.estado === 'ejecucion').length
+    const total         = proyectos.filter((p) => !p.archivado).length
+    const activos       = proyectos.filter((p) => p.estado === 'ejecucion' && !p.archivado).length
     const avanceProm    = total > 0
       ? Math.round(proyectos.reduce((s, p) => s + (p.porcentajeAvance ?? 0), 0) / total)
       : 0
@@ -155,7 +157,7 @@ export default function ProyectosPage() {
         {ganttExpandido && (
           <div className="card overflow-hidden">
             <GanttView
-              proyectos={datosPlanificacion.proyectos.filter((p) => (mostrarCerrados || p.estado !== 'cerrado') && p.estado !== 'cancelado')}
+              proyectos={datosPlanificacion.proyectos.filter((p) => !p.archivado && p.estado !== 'cancelado')}
               tareas={datosPlanificacion.tareas}
               colorMap={colorMapGantt}
             />
@@ -206,12 +208,12 @@ export default function ProyectosPage() {
           </div>
           <label className="flex items-center gap-2 cursor-pointer select-none">
             <div
-              onClick={() => setMostrarCerrados(!mostrarCerrados)}
-              className={`relative w-8 h-4 rounded-full transition-colors ${mostrarCerrados ? 'bg-indigo-500' : 'bg-slate-300'}`}
+              onClick={() => setMostrarArchivados(!mostrarArchivados)}
+              className={`relative w-8 h-4 rounded-full transition-colors ${mostrarArchivados ? 'bg-indigo-500' : 'bg-slate-300'}`}
             >
-              <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform ${mostrarCerrados ? 'translate-x-4' : 'translate-x-0.5'}`} />
+              <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform ${mostrarArchivados ? 'translate-x-4' : 'translate-x-0.5'}`} />
             </div>
-            <span className="text-xs text-slate-500">Mostrar cerrados</span>
+            <span className="text-xs text-slate-500">Ver archivados</span>
           </label>
         </div>
       </div>
@@ -275,6 +277,11 @@ export default function ProyectosPage() {
                     <td className="table-td">
                       <div className="font-medium text-slate-800">{p.nombre}</div>
                       {p.cliente && <div className="text-xs text-slate-400">{p.cliente}</div>}
+                      {p.archivado && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-medium text-slate-400">
+                          Archivado
+                        </span>
+                      )}
                       {p.tieneTareasVencidas && (
                         <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-red-600">
                           <AlertTriangle className="w-3 h-3" />Tareas vencidas

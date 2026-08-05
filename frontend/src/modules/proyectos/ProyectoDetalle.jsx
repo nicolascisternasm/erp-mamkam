@@ -141,7 +141,7 @@ export default function ProyectoDetalle() {
   const [recEnviado,   setRecEnviado]   = useState(false)
 
   // Proyectos activos para selector de destino en modal gastos
-  const proyectosActivos = allProyectos.filter((p) => p.estado === 'ejecucion')
+  const proyectosActivos = allProyectos.filter((p) => p.estado === 'ejecucion' && !p.archivado)
 
   // Modales
   const [modalCot, setModalCot] = useState(false)

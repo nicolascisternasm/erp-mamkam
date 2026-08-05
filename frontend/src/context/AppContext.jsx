@@ -239,7 +239,10 @@ export function AppProvider({ children }) {
   }
 
   const changeCotizacionStatus = (id, estado) => {
-    updateCotizacion(id, { estado })
+    updateCotizacionLocal(id, { estado })
+    apiClient.patch(`cotizaciones/${id}`, { estado }).catch((e) =>
+      console.error('[changeCotizacionStatus]', e)
+    )
   }
 
   const setCuotaEstado = (cotId, cuotaIdx, nuevoEstado) => {

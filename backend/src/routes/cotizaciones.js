@@ -48,6 +48,14 @@ router.patch('/:id', requireAuth, async (req, res) => {
     .select()
     .single()
   if (error) return res.status(400).json({ error: error.message })
+
+  const TRIGGER_STATES = ['en_ejecucion', 'ejecutada', 'cerrada', 'rechazada', 'perdida']
+  if (req.body.estado && TRIGGER_STATES.includes(req.body.estado)) {
+    sincronizarEstadoProyecto(supabase, req.params.id, req.body.estado).catch((e) =>
+      console.error('[sincronizarEstadoProyecto]', e)
+    )
+  }
+
   res.json({ data })
 })
 
@@ -56,6 +64,48 @@ router.delete('/:id', requireAuth, requireRole('admin'), async (req, res) => {
   if (error) return res.status(400).json({ error: error.message })
   res.status(204).end()
 })
+
+/* ── Sincronización automática de estado de proyecto ─────────── */
+const COT_TO_PROYECTO_ESTADO = {
+  borrador:     'planificacion',
+  enviada:      'planificacion',
+  visita:       'planificacion',
+  aprobada:     'planificacion',
+  en_ejecucion: 'ejecucion',
+  ejecutada:    'cierre',
+  cerrada:      'cierre',
+  rechazada:    'cancelado',
+  perdida:      'cancelado',
+}
+
+async function sincronizarEstadoProyecto(supabase, cotizacionId, nuevoCotEstado) {
+  const nuevoEstadoProyecto = COT_TO_PROYECTO_ESTADO[nuevoCotEstado]
+  if (!nuevoEstadoProyecto) return
+
+  const { data: links } = await supabase
+    .from('proyecto_cotizaciones')
+    .select('proyecto_id')
+    .eq('cotizacion_id', cotizacionId)
+
+  if (!links?.length) return
+
+  const proyectoIds = links.map((l) => l.proyecto_id)
+
+  const { data: proyectos } = await supabase
+    .from('proyectos')
+    .select('id, estado')
+    .in('id', proyectoIds)
+
+  if (!proyectos?.length) return
+
+  for (const p of proyectos) {
+    if (p.estado === 'pausado' || p.estado === 'cancelado') continue
+    await supabase
+      .from('proyectos')
+      .update({ estado: nuevoEstadoProyecto, archivado: nuevoEstadoProyecto === 'cierre' })
+      .eq('id', p.id)
+  }
+}
 
 /* ── SMTP transporter ─────────────────────────────────────────── */
 function createTransporter() {

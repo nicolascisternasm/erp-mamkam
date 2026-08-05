@@ -28,6 +28,7 @@ const fromProyecto = (r) => ({
   responsableId: r.responsable_id,
   responsableNombre: r.responsable_nombre,
   estado: r.estado,
+  archivado: r.archivado ?? false,
   porcentajeAvance: r.porcentaje_avance ?? 0,
   fechaInicioEst: r.fecha_inicio_est,
   fechaFinEst: r.fecha_fin_est,
@@ -535,7 +536,7 @@ router.patch('/:id/estado', async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('proyectos')
-      .update({ estado })
+      .update({ estado, archivado: estado === 'cierre' })
       .eq('id', id)
       .eq('empresa_id', req.user.empresa_id)
       .select('*')

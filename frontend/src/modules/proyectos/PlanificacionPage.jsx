@@ -151,7 +151,7 @@ export default function PlanificacionPage() {
   const [vista,          setVista]          = useState('gantt')
   const [filtroProyecto, setFiltroProyecto] = useState('todos')
   const [analisisIA,     setAnalisisIA]     = useState({})
-  const [mostrarCerrados, setMostrarCerrados] = useState(false)
+  const [mostrarArchivados, setMostrarArchivados] = useState(false)
 
   const trabMap = useMemo(() =>
     Object.fromEntries(trabajadores.map((t) => [String(t.id), t.nombre])),
@@ -189,7 +189,7 @@ export default function PlanificacionPage() {
   }, [proyectos])
 
   const filteredProys  = (filtroProyecto === 'todos' ? proyectos : proyectos.filter((p) => p.id === filtroProyecto))
-    .filter((p) => (mostrarCerrados || p.estado !== 'cerrado') && p.estado !== 'cancelado')
+    .filter((p) => (mostrarArchivados || !p.archivado) && p.estado !== 'cancelado')
   const filteredTareas = filtroProyecto === 'todos' ? tareas    : tareas.filter((t) => t.proyectoId === filtroProyecto)
 
   const avancePorProyecto = useMemo(() => {
@@ -264,12 +264,12 @@ export default function PlanificacionPage() {
           </select>
           <label className="flex items-center gap-2 cursor-pointer select-none">
             <div
-              onClick={() => setMostrarCerrados(!mostrarCerrados)}
-              className={`relative w-8 h-4 rounded-full transition-colors ${mostrarCerrados ? 'bg-indigo-500' : 'bg-slate-300'}`}
+              onClick={() => setMostrarArchivados(!mostrarArchivados)}
+              className={`relative w-8 h-4 rounded-full transition-colors ${mostrarArchivados ? 'bg-indigo-500' : 'bg-slate-300'}`}
             >
-              <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform ${mostrarCerrados ? 'translate-x-4' : 'translate-x-0.5'}`} />
+              <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform ${mostrarArchivados ? 'translate-x-4' : 'translate-x-0.5'}`} />
             </div>
-            <span className="text-xs text-slate-500">Mostrar cerrados</span>
+            <span className="text-xs text-slate-500">Mostrar archivados</span>
           </label>
           <button onClick={cargar} title="Recargar"
             className="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors">

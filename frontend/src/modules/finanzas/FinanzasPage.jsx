@@ -3374,7 +3374,7 @@ export default function FinanzasPage() {
               >
                 <option value="">Sin proyecto asociado</option>
                 {proyectos
-                  .filter(p => p.estado === 'ejecucion')
+                  .filter(p => p.estado === 'ejecucion' && !p.archivado)
                   .map(p => (
                     <option key={p.id} value={p.id}>
                       {p.codigo} — {p.nombre}
