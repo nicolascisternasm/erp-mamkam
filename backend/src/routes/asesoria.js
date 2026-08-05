@@ -153,9 +153,8 @@ async function getContextoEmpresa(empresaId) {
 
   // ── Procesar Visitas ─────────────────────────────────────────────
   const visitasData      = visitas || []
-  const visitasComplet   = visitasData.filter(v => v.estado === 'completada').length
-  const visitasEnCurso   = visitasData.filter(v => v.estado === 'en_curso').length
-  const visitasAgendadas = visitasData.filter(v => v.estado === 'agendada').length
+  const visitasEjecutadas   = visitasData.filter(v => v.estado === 'ejecutada').length
+  const visitasPlanificadas = visitasData.filter(v => v.estado === 'planificada').length
   const ultimaVisita     = visitasData[0] ? { cliente: visitasData[0].cliente, estado: visitasData[0].estado, fecha: visitasData[0].fecha_agendada } : null
 
   // ── Procesar Facturas SII ────────────────────────────────────────
@@ -244,10 +243,9 @@ async function getContextoEmpresa(empresaId) {
       promedio_horas_diarias:   promedioHoras,
     },
     visitas: {
-      total:       visitasData.length,
-      completadas: visitasComplet,
-      en_curso:    visitasEnCurso,
-      agendadas:   visitasAgendadas,
+      total:        visitasData.length,
+      ejecutadas:   visitasEjecutadas,
+      planificadas: visitasPlanificadas,
       ultima_visita: ultimaVisita,
     },
     facturas_sii: {

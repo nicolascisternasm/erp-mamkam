@@ -14,28 +14,19 @@ import {
 // ── Constantes ────────────────────────────────────────────────────────────────
 
 const ESTADOS = [
-  { value: 'todas',      label: 'Todas' },
-  { value: 'agendada',   label: 'Agendada' },
-  { value: 'en_curso',   label: 'En curso' },
-  { value: 'realizada',  label: 'Realizada' },
-  { value: 'completada', label: 'Completada' },
-  { value: 'programada', label: 'Programada' },
+  { value: 'todas',       label: 'Todas' },
+  { value: 'planificada', label: 'Planificada' },
+  { value: 'ejecutada',   label: 'Ejecutada' },
 ]
 
 const ESTADO_LABEL = {
-  agendada:   'Agendada',
-  en_curso:   'En curso',
-  realizada:  'Realizada',
-  completada: 'Completada',
-  programada: 'Programada',
+  planificada: 'Planificada',
+  ejecutada:   'Ejecutada',
 }
 
 const ESTADO_COLORS = {
-  agendada:   'bg-blue-100 text-blue-700',
-  en_curso:   'bg-amber-100 text-amber-700',
-  realizada:  'bg-violet-100 text-violet-700',
-  completada: 'bg-emerald-100 text-emerald-700',
-  programada: 'bg-slate-100 text-slate-600',
+  planificada: 'bg-blue-100 text-blue-700',
+  ejecutada:   'bg-emerald-100 text-emerald-700',
 }
 
 const PRODUCT_LABELS = {
@@ -76,11 +67,8 @@ const TIPO_ESPACIO_LABEL = {
 const MODAL_TABS = ['Datos', 'Checklist', 'Multimedia', 'Resumen IA']
 
 const ESTADOS_EDITAR = [
-  { value: 'agendada',   label: 'Agendada' },
-  { value: 'en_curso',   label: 'En curso' },
-  { value: 'realizada',  label: 'Realizada' },
-  { value: 'completada', label: 'Completada' },
-  { value: 'programada', label: 'Programada' },
+  { value: 'planificada', label: 'Planificada' },
+  { value: 'ejecutada',   label: 'Ejecutada' },
 ]
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

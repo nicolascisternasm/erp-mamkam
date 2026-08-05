@@ -675,11 +675,8 @@ export default function HojaTrabajo({ cot, user, empresa }) {
 }
 
 const VISITA_ESTADO_STYLES = {
-  agendada:   'bg-blue-100 text-blue-700',
-  visita:     'bg-indigo-100 text-indigo-700',
-  en_curso:   'bg-amber-100 text-amber-700',
-  completada: 'bg-emerald-100 text-emerald-700',
-  resumida:   'bg-violet-100 text-violet-700',
+  planificada: 'bg-blue-100 text-blue-700',
+  ejecutada:   'bg-emerald-100 text-emerald-700',
 }
 
 function DataRow({ label, value }) {

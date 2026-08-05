@@ -16,9 +16,8 @@ const PRODUCTOS_OPCIONES = [
 ]
 
 const ESTADO_STYLES = {
-  completada: 'bg-emerald-100 text-emerald-700',
-  en_curso:   'bg-amber-100 text-amber-700',
-  realizada:  'bg-violet-100 text-violet-700',
+  planificada: 'bg-blue-100 text-blue-700',
+  ejecutada:   'bg-emerald-100 text-emerald-700',
 }
 
 const LABEL_TO_SNAKE = {
@@ -104,7 +103,7 @@ export default function ModalVisita({ cot, onClose }) {
         notas_previas:      notasPrevias  || null,
         vendedor_id:        user?.id,
         vendedor_nombre:    user?.nombre  || null,
-        estado:             'agendada',
+        estado:             'planificada',
       })
       .select()
       .single()
