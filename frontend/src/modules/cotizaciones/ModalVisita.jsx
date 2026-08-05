@@ -1011,11 +1011,12 @@ function TabFotos({ visita }) {
             <div key={a.id} className="relative group rounded-xl overflow-hidden bg-slate-100 aspect-square">
               {a.tipo === 'video' ? (
                 <video src={a.url} controls className="w-full h-full object-cover" />
-              ) : a.tipo === 'documento' ? (
+              ) : (a.tipo === 'documento' || ['pdf','doc','docx','xls','xlsx'].includes(a.nombre_archivo?.split('.').pop()?.toLowerCase())) ? (
                 <a
                   href={a.url}
                   target="_blank"
                   rel="noreferrer"
+                  onClick={e => e.stopPropagation()}
                   className="w-full h-full flex flex-col items-center justify-center gap-2 p-3 hover:bg-slate-200 transition-colors"
                 >
                   <FileText className={`w-10 h-10 ${docIconColor(a.nombre_archivo)}`} />
@@ -1034,7 +1035,7 @@ function TabFotos({ visita }) {
               )}
               <button
                 type="button"
-                onClick={() => handleEliminar(a)}
+                onClick={e => { e.stopPropagation(); handleEliminar(a) }}
                 className="absolute top-2 right-2 z-10 w-7 h-7 rounded-lg bg-white/80 hover:bg-red-50 text-slate-500 hover:text-red-600 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
               >
                 <Trash2 className="w-3.5 h-3.5" />
