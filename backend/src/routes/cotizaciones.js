@@ -272,7 +272,7 @@ router.post('/:id/enviar-email', async (req, res) => {
 router.post('/:id/enviar-email-ejecucion', async (req, res) => {
   try {
     const { id } = req.params
-    const { destinatario, mensaje, fotosIds = [], comprobantesIncluidos = [] } = req.body
+    const { destinatario, mensaje, fotosIds = [], comprobantesIncluidos = [], fotosManuales = [] } = req.body
 
     if (!destinatario) {
       return res.status(400).json({ success: false, error: { message: 'El destinatario es requerido' } })
@@ -325,10 +325,26 @@ router.post('/:id/enviar-email-ejecucion', async (req, res) => {
         const resp = await fetch(comp.url)
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
         const buf  = Buffer.from(await resp.arrayBuffer())
-        attachments.push({ filename: comp.nombre_archivo || `comprobante-${idx + 1}.pdf`, content: buf })
+        attachments.push({ filename: comp.nombre || comp.nombre_archivo || `comprobante-${idx + 1}.pdf`, content: buf })
       } catch (e) {
         console.error(`[enviar-email-ejecucion] Error descargando comprobante ${idx}:`, e.message)
       }
+    }
+
+    // Adjuntar fotos manuales (base64, sin persistir)
+    for (const f of fotosManuales) {
+      if (!f?.base64 || !f?.nombre) continue
+      try {
+        attachments.push({ filename: f.nombre, content: Buffer.from(f.base64, 'base64') })
+      } catch (e) {
+        console.error(`[enviar-email-ejecucion] Error procesando foto manual "${f.nombre}":`, e.message)
+      }
+    }
+
+    // Advertencia de tamaño total
+    const totalBytes = attachments.reduce((s, a) => s + (a.content?.length || 0), 0)
+    if (totalBytes > 15 * 1024 * 1024) {
+      console.warn(`[enviar-email-ejecucion] AVISO: adjuntos totales = ${(totalBytes / 1024 / 1024).toFixed(1)} MB — puede exceder límite SMTP (15 MB)`)
     }
 
     // Construir HTML

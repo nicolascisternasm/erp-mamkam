@@ -1,8 +1,9 @@
-import { useState, useEffect, useMemo } from 'react'
-import { X, Mail, Loader2, AlertCircle, ImageIcon, FileText } from 'lucide-react'
+import { useState, useEffect, useMemo, useRef } from 'react'
+import { X, Mail, Loader2, AlertCircle, ImageIcon, FileText, Plus, Paperclip } from 'lucide-react'
 import { supabase } from '../../services/supabase'
 import { apiClient } from '../../services/apiClient'
 import { formatCLP } from '../../utils/formatters'
+import { useApp } from '../../context/AppContext'
 
 function buildDefaultMsg(cot, condicionesConSaldo, totalSaldo) {
   const nombre = cot.cliente?.split(' ')[0] || 'Cliente'
@@ -27,12 +28,14 @@ function buildDefaultMsg(cot, condicionesConSaldo, totalSaldo) {
 }
 
 export default function ModalEnviarEjecucion({ cot, onClose, onSuccess }) {
-  const condicionesPago  = cot.condicionesPago  ?? []
+  const { updateCotizacion } = useApp()
+
+  const condicionesPago   = cot.condicionesPago   ?? []
   const pagosComprobantes = cot.pagosComprobantes ?? []
 
   const condicionesConSaldo = useMemo(() =>
     condicionesPago.map(cp => {
-      const monto = cp.monto || Math.round((cot.total || 0) * (cp.porcentaje || 0) / 100)
+      const monto  = cp.monto || Math.round((cot.total || 0) * (cp.porcentaje || 0) / 100)
       const pagado = pagosComprobantes
         .filter(p => String(p.condicion_id) === String(cp.id))
         .reduce((s, p) => s + (Number(p.monto) || 0), 0)
@@ -48,15 +51,28 @@ export default function ModalEnviarEjecucion({ cot, onClose, onSuccess }) {
   const [destinatario, setDestinatario] = useState(cot.email || '')
   const [mensaje, setMensaje] = useState(() => buildDefaultMsg(cot, condicionesConSaldo, totalSaldo))
 
-  const [fotos, setFotos] = useState([])
+  // Fotos de visitas (BD)
+  const [fotos, setFotos]             = useState([])
   const [fotosLoading, setFotosLoading] = useState(true)
   const [fotosSeleccionadas, setFotosSeleccionadas] = useState([])
 
+  // Fotos manuales — solo viajan en el request, no se persisten
+  const [fotosManuales, setFotosManuales] = useState([]) // [{nombre, dataUrl, base64}]
+  const fotosManualRef = useRef(null)
+
+  // Comprobantes (del contexto)
   const [comprobantesSeleccionados, setComprobantesSeleccionados] = useState([])
 
-  const [enviando, setEnviando] = useState(false)
-  const [error, setError] = useState(null)
+  // Mini-form comprobante nuevo
+  const [compNuevoForm, setCompNuevoForm]       = useState(null) // null | {file, condicion_id, monto}
+  const [compNuevoSubiendo, setCompNuevoSubiendo] = useState(false)
+  const [compNuevoError, setCompNuevoError]     = useState(null)
+  const compNuevoRef = useRef(null)
 
+  const [enviando, setEnviando] = useState(false)
+  const [error, setError]       = useState(null)
+
+  // Cargar fotos de visitas
   useEffect(() => {
     let cancelled = false
     async function cargarFotos() {
@@ -69,14 +85,13 @@ export default function ModalEnviarEjecucion({ cot, onClose, onSuccess }) {
         if (cancelled) return
         const visitaIds = (visitas || []).map(v => v.id)
         if (!visitaIds.length) { setFotos([]); return }
-
         const { data: fotoRows } = await supabase
           .from('visita_fotos')
           .select('id, url, nombre_archivo, tipo')
           .in('visita_id', visitaIds)
           .eq('tipo', 'foto')
         if (!cancelled) setFotos(fotoRows || [])
-      } catch (e) {
+      } catch {
         if (!cancelled) setFotos([])
       } finally {
         if (!cancelled) setFotosLoading(false)
@@ -86,26 +101,99 @@ export default function ModalEnviarEjecucion({ cot, onClose, onSuccess }) {
     return () => { cancelled = true }
   }, [cot.id])
 
+  /* ── Handlers fotos BD ─────────────────────────────────────────── */
   const toggleFoto = (id) =>
     setFotosSeleccionadas(prev =>
       prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
     )
 
+  /* ── Handlers fotos manuales ───────────────────────────────────── */
+  const handleFotosManual = async (files) => {
+    const nuevas = await Promise.all(
+      Array.from(files).map(file => new Promise(resolve => {
+        const reader = new FileReader()
+        reader.onload = e => resolve({
+          nombre:  file.name,
+          dataUrl: e.target.result,
+          base64:  e.target.result.split(',')[1],
+        })
+        reader.readAsDataURL(file)
+      }))
+    )
+    setFotosManuales(prev => [...prev, ...nuevas])
+  }
+
+  const quitarFotoManual = (idx) =>
+    setFotosManuales(prev => prev.filter((_, i) => i !== idx))
+
+  /* ── Handlers comprobantes ─────────────────────────────────────── */
   const toggleComprobante = (idx) =>
     setComprobantesSeleccionados(prev =>
       prev.includes(idx) ? prev.filter(x => x !== idx) : [...prev, idx]
     )
 
+  const handleCompNuevoFile = (file) => {
+    if (!file) return
+    if (compNuevoRef.current) compNuevoRef.current.value = ''
+    setCompNuevoForm({ file, condicion_id: '', monto: '' })
+    setCompNuevoError(null)
+  }
+
+  const handleGuardarCompNuevo = async () => {
+    if (!compNuevoForm) return
+    const { file, condicion_id, monto } = compNuevoForm
+    setCompNuevoSubiendo(true)
+    setCompNuevoError(null)
+    try {
+      const ts   = Date.now()
+      const path = `comprobantes-pago/${cot.id}/ejecucion_${ts}_${file.name}`
+      const { error: upErr } = await supabase.storage
+        .from('proyectos-documentos')
+        .upload(path, file, { upsert: false, contentType: file.type })
+      if (upErr) throw upErr
+
+      const url      = supabase.storage.from('proyectos-documentos').getPublicUrl(path).data.publicUrl
+      const montoNum = monto ? Number(String(monto).replace(/\./g, '').replace(/,/g, '')) : 0
+      const condDesc = condicionesPago.find(c => String(c.id) === String(condicion_id))?.descripcion
+
+      const nuevoComp = {
+        condicion_id: condicion_id || null,
+        monto:        montoNum,
+        url,
+        nombre:       file.name,
+        fecha:        new Date().toISOString().slice(0, 10),
+        glosa:        condDesc
+          ? `Pago ${condDesc} - ${cot.numero}`
+          : `Comprobante adicional - ${cot.numero}`,
+      }
+
+      const newPagos = [...pagosComprobantes, nuevoComp]
+      await apiClient.patch(`cotizaciones/${cot.id}`, { pagos_comprobantes: newPagos })
+      updateCotizacion(cot.id, { pagosComprobantes: newPagos })
+
+      // Auto-seleccionar el recién agregado (índice = longitud anterior)
+      const newIdx = pagosComprobantes.length
+      setComprobantesSeleccionados(prev => [...prev, newIdx])
+      setCompNuevoForm(null)
+    } catch (e) {
+      setCompNuevoError(e.message || 'Error al subir el archivo.')
+    } finally {
+      setCompNuevoSubiendo(false)
+    }
+  }
+
+  /* ── Enviar email ──────────────────────────────────────────────── */
   const handleEnviar = async () => {
     if (!destinatario.trim()) { setError('El destinatario es requerido.'); return }
     setEnviando(true)
     setError(null)
     try {
       await apiClient.post(`cotizaciones/${cot.id}/enviar-email-ejecucion`, {
-        destinatario: destinatario.trim(),
+        destinatario:          destinatario.trim(),
         mensaje,
-        fotosIds: fotosSeleccionadas,
+        fotosIds:              fotosSeleccionadas,
         comprobantesIncluidos: comprobantesSeleccionados,
+        fotosManuales:         fotosManuales.map(f => ({ nombre: f.nombre, base64: f.base64 })),
       })
       onSuccess?.()
       onClose()
@@ -116,6 +204,7 @@ export default function ModalEnviarEjecucion({ cot, onClose, onSuccess }) {
     }
   }
 
+  /* ── Render ────────────────────────────────────────────────────── */
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 overflow-y-auto py-8 px-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl">
@@ -141,7 +230,8 @@ export default function ModalEnviarEjecucion({ cot, onClose, onSuccess }) {
           {/* Destinatario */}
           <div>
             <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
-              Destinatario
+              Destinatario{' '}
+              <span className="text-slate-300 normal-case font-normal">(CC automático: contacto@mamkam.cl)</span>
             </label>
             <input
               type="email"
@@ -157,7 +247,7 @@ export default function ModalEnviarEjecucion({ cot, onClose, onSuccess }) {
             )}
           </div>
 
-          {/* Saldo resumido */}
+          {/* Saldo pendiente */}
           {condicionesConSaldo.length > 0 && (
             <div className="rounded-xl border border-slate-100 overflow-hidden">
               <div className="bg-slate-50 px-4 py-2 border-b border-slate-100">
@@ -199,28 +289,51 @@ export default function ModalEnviarEjecucion({ cot, onClose, onSuccess }) {
             />
           </div>
 
-          {/* Fotos adjuntas */}
+          {/* ── Fotos del proyecto ─────────────────────────────────── */}
           <div>
-            <div className="flex items-center gap-2 mb-2">
-              <ImageIcon className="w-4 h-4 text-slate-400" />
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                Fotos del proyecto
-              </span>
-              {fotosLoading && <Loader2 className="w-3 h-3 text-slate-300 animate-spin" />}
-              {!fotosLoading && (
-                <span className="text-xs text-slate-400">({fotos.length} disponibles)</span>
-              )}
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <ImageIcon className="w-4 h-4 text-slate-400" />
+                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Fotos del proyecto</span>
+                {fotosLoading
+                  ? <Loader2 className="w-3 h-3 text-slate-300 animate-spin" />
+                  : <span className="text-xs text-slate-400">({fotos.length + fotosManuales.length} disponibles)</span>
+                }
+              </div>
+              <button
+                onClick={() => fotosManualRef.current?.click()}
+                className="flex items-center gap-1 text-xs text-teal-600 hover:text-teal-700 font-medium"
+              >
+                <Plus className="w-3.5 h-3.5" /> Agregar fotos
+              </button>
+              <input
+                ref={fotosManualRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={e => {
+                  if (e.target.files?.length) handleFotosManual(e.target.files)
+                  e.target.value = ''
+                }}
+              />
             </div>
-            {!fotosLoading && fotos.length === 0 && (
-              <p className="text-xs text-slate-400 italic">Sin fotos registradas en las visitas.</p>
+
+            {!fotosLoading && fotos.length === 0 && fotosManuales.length === 0 && (
+              <p className="text-xs text-slate-400 italic">
+                Sin fotos en visitas. Usa "+ Agregar fotos" para adjuntar manualmente.
+              </p>
             )}
-            {fotos.length > 0 && (
+
+            {(fotos.length > 0 || fotosManuales.length > 0) && (
               <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+                {/* Fotos de BD */}
                 {fotos.map(f => {
                   const sel = fotosSeleccionadas.includes(f.id)
                   return (
                     <button
                       key={f.id}
+                      type="button"
                       onClick={() => toggleFoto(f.id)}
                       className={`relative aspect-square rounded-lg overflow-hidden border-2 transition-all ${
                         sel ? 'border-teal-500 ring-2 ring-teal-300' : 'border-transparent hover:border-slate-300'
@@ -239,23 +352,72 @@ export default function ModalEnviarEjecucion({ cot, onClose, onSuccess }) {
                     </button>
                   )
                 })}
+
+                {/* Fotos manuales */}
+                {fotosManuales.map((f, idx) => (
+                  <div
+                    key={`manual-${idx}`}
+                    className="relative aspect-square rounded-lg overflow-hidden border-2 border-teal-300 ring-2 ring-teal-200"
+                  >
+                    <img src={f.dataUrl} alt={f.nombre} className="w-full h-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => quitarFotoManual(idx)}
+                      className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center transition-colors"
+                    >
+                      <X className="w-3 h-3 text-white" />
+                    </button>
+                    <div className="absolute bottom-0 inset-x-0 bg-teal-600/80 text-white text-[9px] text-center py-0.5 truncate px-1">
+                      manual
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
-            {fotosSeleccionadas.length > 0 && (
-              <p className="mt-1.5 text-xs text-teal-600">{fotosSeleccionadas.length} foto(s) se adjuntarán al email.</p>
+
+            {(fotosSeleccionadas.length + fotosManuales.length > 0) && (
+              <p className="mt-1.5 text-xs text-teal-600">
+                {fotosSeleccionadas.length + fotosManuales.length} foto(s) se adjuntarán al email.
+              </p>
             )}
           </div>
 
-          {/* Comprobantes de pago adjuntos */}
-          {pagosComprobantes.length > 0 && (
-            <div>
-              <div className="flex items-center gap-2 mb-2">
+          {/* ── Comprobantes de pago ───────────────────────────────── */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
                 <FileText className="w-4 h-4 text-slate-400" />
-                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                  Comprobantes de pago
-                </span>
+                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Comprobantes de pago</span>
               </div>
-              <div className="space-y-1.5">
+              {!compNuevoForm && (
+                <button
+                  type="button"
+                  onClick={() => compNuevoRef.current?.click()}
+                  className="flex items-center gap-1 text-xs text-teal-600 hover:text-teal-700 font-medium"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Agregar comprobante o factura
+                </button>
+              )}
+              <input
+                ref={compNuevoRef}
+                type="file"
+                accept="image/*,.pdf"
+                className="hidden"
+                onChange={e => {
+                  const f = e.target.files?.[0]
+                  if (f) handleCompNuevoFile(f)
+                }}
+              />
+            </div>
+
+            {/* Lista de comprobantes existentes */}
+            {pagosComprobantes.length === 0 && !compNuevoForm && (
+              <p className="text-xs text-slate-400 italic mb-2">
+                Sin comprobantes. Usa el botón de arriba para agregar.
+              </p>
+            )}
+            {pagosComprobantes.length > 0 && (
+              <div className="space-y-1.5 mb-3">
                 {pagosComprobantes.map((p, idx) => {
                   const sel = comprobantesSeleccionados.includes(idx)
                   return (
@@ -264,20 +426,83 @@ export default function ModalEnviarEjecucion({ cot, onClose, onSuccess }) {
                         type="checkbox"
                         checked={sel}
                         onChange={() => toggleComprobante(idx)}
-                        className="w-4 h-4 rounded border-slate-300 text-teal-600 focus:ring-teal-400"
+                        className="w-4 h-4 rounded border-slate-300 text-teal-600 focus:ring-teal-400 shrink-0"
                       />
-                      <span className="text-sm text-slate-600 group-hover:text-slate-900 transition-colors truncate">
-                        {p.nombre_archivo || `Comprobante ${idx + 1}`}
+                      <span className="text-sm text-slate-600 group-hover:text-slate-900 transition-colors truncate min-w-0">
+                        {p.nombre || p.nombre_archivo || `Comprobante ${idx + 1}`}
                         {p.monto ? <span className="ml-2 text-slate-400 text-xs">{formatCLP(p.monto)}</span> : null}
+                        {p.glosa ? <span className="ml-1 text-slate-400 text-xs">· {p.glosa}</span> : null}
                       </span>
                     </label>
                   )
                 })}
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Error */}
+            {/* Mini-form comprobante nuevo */}
+            {compNuevoForm && (
+              <div className="rounded-xl border border-teal-200 bg-teal-50 p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Paperclip className="w-4 h-4 text-teal-600 shrink-0" />
+                  <span className="text-sm font-semibold text-teal-700 truncate">{compNuevoForm.file.name}</span>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Corresponde a</label>
+                  <select
+                    value={compNuevoForm.condicion_id}
+                    onChange={e => setCompNuevoForm(f => ({ ...f, condicion_id: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-400"
+                  >
+                    <option value="">General / No aplica</option>
+                    {condicionesPago.map(cp => (
+                      <option key={cp.id} value={cp.id}>
+                        {cp.descripcion || `Condición ${cp.id}`}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Monto (opcional)</label>
+                  <input
+                    type="number"
+                    value={compNuevoForm.monto}
+                    onChange={e => setCompNuevoForm(f => ({ ...f, monto: e.target.value }))}
+                    placeholder="0"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+                  />
+                </div>
+                {compNuevoError && (
+                  <p className="text-xs text-red-600 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3 shrink-0" /> {compNuevoError}
+                  </p>
+                )}
+                <div className="flex gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => { setCompNuevoForm(null); setCompNuevoError(null) }}
+                    disabled={compNuevoSubiendo}
+                    className="flex-1 px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleGuardarCompNuevo}
+                    disabled={compNuevoSubiendo}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold rounded-lg transition-colors disabled:opacity-50"
+                  >
+                    {compNuevoSubiendo
+                      ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      : <Plus className="w-3.5 h-3.5" />
+                    }
+                    {compNuevoSubiendo ? 'Subiendo…' : 'Guardar y adjuntar'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Error envío */}
           {error && (
             <div className="flex items-start gap-2 p-3 rounded-xl bg-red-50 border border-red-100">
               <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 shrink-0" />
@@ -289,6 +514,7 @@ export default function ModalEnviarEjecucion({ cot, onClose, onSuccess }) {
         {/* Footer */}
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-100">
           <button
+            type="button"
             onClick={onClose}
             disabled={enviando}
             className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50"
@@ -296,9 +522,11 @@ export default function ModalEnviarEjecucion({ cot, onClose, onSuccess }) {
             Cancelar
           </button>
           <button
+            type="button"
             onClick={handleEnviar}
-            disabled={enviando || !destinatario.trim()}
+            disabled={enviando || !destinatario.trim() || !!compNuevoForm}
             className="flex items-center gap-2 px-5 py-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            title={compNuevoForm ? 'Guarda o cancela el comprobante antes de enviar' : undefined}
           >
             {enviando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
             {enviando ? 'Enviando…' : 'Enviar notificación'}
