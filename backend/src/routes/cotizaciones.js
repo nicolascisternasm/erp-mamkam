@@ -511,4 +511,63 @@ router.post('/:id/enviar-email-ejecucion', async (req, res) => {
   }
 })
 
+/* ── Backfill: recalcular estado de TODOS los proyectos existentes ── */
+// Endpoint temporal — llamar UNA sola vez desde Postman/navegador con token admin.
+// Eliminar o dejar inactivo una vez verificado el resultado.
+router.post('/admin/backfill-proyectos', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const { data: links } = await supabase
+      .from('proyecto_cotizaciones')
+      .select('proyecto_id')
+
+    if (!links?.length) return res.json({ proyectosConCotizacion: 0, actualizados: 0, cambios: [] })
+
+    const proyectoIds = [...new Set(links.map((l) => l.proyecto_id))]
+    const cambios = []
+
+    for (const proyectoId of proyectoIds) {
+      const { data: linksCot } = await supabase
+        .from('proyecto_cotizaciones')
+        .select('cotizacion_id')
+        .eq('proyecto_id', proyectoId)
+
+      if (!linksCot?.length) continue
+
+      const { data: cots } = await supabase
+        .from('cotizaciones')
+        .select('estado')
+        .in('id', linksCot.map((l) => l.cotizacion_id))
+
+      if (!cots?.length) continue
+
+      const mapped     = cots.map((c) => COT_TO_PROYECTO_ESTADO[c.estado]).filter(Boolean)
+      const nonCancel  = mapped.filter((e) => e !== 'cancelado')
+      const nuevoEstado = nonCancel.length
+        ? nonCancel.reduce((best, e) => (PRIORIDAD[e] ?? 0) > (PRIORIDAD[best] ?? 0) ? e : best)
+        : 'cancelado'
+
+      const { data: actual } = await supabase
+        .from('proyectos')
+        .select('id, codigo, nombre, estado')
+        .eq('id', proyectoId)
+        .single()
+
+      if (!actual) continue
+      if (actual.estado === nuevoEstado) continue
+
+      await supabase
+        .from('proyectos')
+        .update({ estado: nuevoEstado, archivado: nuevoEstado === 'cierre' })
+        .eq('id', proyectoId)
+
+      cambios.push({ id: proyectoId, codigo: actual.codigo, nombre: actual.nombre, antes: actual.estado, despues: nuevoEstado })
+    }
+
+    res.json({ proyectosConCotizacion: proyectoIds.length, actualizados: cambios.length, cambios })
+  } catch (err) {
+    console.error('[backfill-proyectos]', err)
+    res.status(500).json({ error: err.message })
+  }
+})
+
 module.exports = router
