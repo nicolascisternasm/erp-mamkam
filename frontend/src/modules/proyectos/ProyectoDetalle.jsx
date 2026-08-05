@@ -18,6 +18,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } fro
 /* ── Helpers ────────────────────────────────────────────────────── */
 
 const ESTADO_CONFIG = {
+  borrador:      { label: 'Borrador',      cls: 'bg-slate-100 text-slate-500'     },
   planificacion: { label: 'Planificación', cls: 'bg-slate-100 text-slate-600'     },
   ejecucion:     { label: 'Ejecución',     cls: 'bg-emerald-100 text-emerald-700' },
   cierre:        { label: 'Cierre',        cls: 'bg-blue-100 text-blue-700'       },
@@ -113,8 +114,6 @@ export default function ProyectoDetalle() {
   const [loading, setLoading] = useState(true)
   const [activeTab,  setActiveTab]  = useState('planificacion')
 
-  // Estado inline
-  const [estadoEdit, setEstadoEdit] = useState(false)
   const [avanceLocal, setAvanceLocal] = useState(0)
 
   // Datos adicionales
@@ -273,16 +272,6 @@ export default function ProyectoDetalle() {
       .eq('empresa_id', user.empresa_id)
       .then(({ data }) => { if (data) setMovimientosProyecto(data) })
   }, [user?.empresa_id])
-
-  const handleEstadoChange = async (estado) => {
-    try {
-      const data = await apiClient.patch(`/proyectos/${id}/estado`, { estado })
-      setProyecto((prev) => ({ ...prev, estado: data.estado }))
-      setEstadoEdit(false)
-    } catch (err) {
-      console.error('Error al cambiar estado:', err)
-    }
-  }
 
   const handleAvanceRelease = async () => {
     try {
@@ -1078,24 +1067,7 @@ export default function ProyectoDetalle() {
             </div>
 
             <div className="flex items-center gap-2 flex-shrink-0">
-              {/* Estado editable */}
-              {estadoEdit ? (
-                <select
-                  autoFocus
-                  value={proyecto.estado}
-                  onChange={(e) => handleEstadoChange(e.target.value)}
-                  onBlur={() => setEstadoEdit(false)}
-                  className="input-base text-xs py-1 px-2 w-36"
-                >
-                  {Object.entries(ESTADO_CONFIG).map(([k, v]) => (
-                    <option key={k} value={k}>{v.label}</option>
-                  ))}
-                </select>
-              ) : (
-                <button onClick={() => setEstadoEdit(true)} title="Cambiar estado">
-                  <EstadoBadge estado={proyecto.estado} />
-                </button>
-              )}
+              <EstadoBadge estado={proyecto.estado ?? 'borrador'} />
 
               <button
                 onClick={() => navigate(`/proyectos/${id}/editar`)}

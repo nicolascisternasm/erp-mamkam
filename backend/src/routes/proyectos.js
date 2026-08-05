@@ -529,6 +529,9 @@ router.delete('/:id/trabajadores/:trabajador_id', async (req, res) => {
 })
 
 /* ── PATCH /api/proyectos/:id/estado ────────────────────────────── */
+// DEPRECADO: el estado ya no se cambia manualmente; es 100% calculado
+// desde las cotizaciones asociadas vía sincronizarEstadoProyecto (cotizaciones.js).
+// Este endpoint quedó sin uso desde el refactor de eliminación del selector manual.
 
 router.patch('/:id/estado', async (req, res) => {
   const { id } = req.params

@@ -49,9 +49,8 @@ router.patch('/:id', requireAuth, async (req, res) => {
     .single()
   if (error) return res.status(400).json({ error: error.message })
 
-  const TRIGGER_STATES = ['en_ejecucion', 'ejecutada', 'cerrada', 'rechazada', 'perdida']
-  if (req.body.estado && TRIGGER_STATES.includes(req.body.estado)) {
-    sincronizarEstadoProyecto(supabase, req.params.id, req.body.estado).catch((e) =>
+  if (req.body.estado) {
+    sincronizarEstadoProyecto(supabase, req.params.id).catch((e) =>
       console.error('[sincronizarEstadoProyecto]', e)
     )
   }
@@ -77,33 +76,48 @@ const COT_TO_PROYECTO_ESTADO = {
   rechazada:    'cancelado',
   perdida:      'cancelado',
 }
+const PRIORIDAD = { planificacion: 1, ejecucion: 2, cierre: 3 }
 
-async function sincronizarEstadoProyecto(supabase, cotizacionId, nuevoCotEstado) {
-  const nuevoEstadoProyecto = COT_TO_PROYECTO_ESTADO[nuevoCotEstado]
-  if (!nuevoEstadoProyecto) return
-
-  const { data: links } = await supabase
+async function sincronizarEstadoProyecto(supabase, cotizacionId) {
+  // Proyectos que contienen esta cotización
+  const { data: linksProyecto } = await supabase
     .from('proyecto_cotizaciones')
     .select('proyecto_id')
     .eq('cotizacion_id', cotizacionId)
 
-  if (!links?.length) return
+  if (!linksProyecto?.length) return
 
-  const proyectoIds = links.map((l) => l.proyecto_id)
+  for (const { proyecto_id } of linksProyecto) {
+    // Todas las cotizaciones del proyecto
+    const { data: linksCot } = await supabase
+      .from('proyecto_cotizaciones')
+      .select('cotizacion_id')
+      .eq('proyecto_id', proyecto_id)
 
-  const { data: proyectos } = await supabase
-    .from('proyectos')
-    .select('id, estado')
-    .in('id', proyectoIds)
+    if (!linksCot?.length) continue
 
-  if (!proyectos?.length) return
+    const { data: cots } = await supabase
+      .from('cotizaciones')
+      .select('estado')
+      .in('id', linksCot.map((l) => l.cotizacion_id))
 
-  for (const p of proyectos) {
-    if (p.estado === 'pausado' || p.estado === 'cancelado') continue
+    if (!cots?.length) continue
+
+    const mapped = cots.map((c) => COT_TO_PROYECTO_ESTADO[c.estado]).filter(Boolean)
+    const nonCancelado = mapped.filter((e) => e !== 'cancelado')
+    const nuevoEstado = nonCancelado.length
+      ? nonCancelado.reduce((best, e) => (PRIORIDAD[e] ?? 0) > (PRIORIDAD[best] ?? 0) ? e : best)
+      : 'cancelado'
+
+    // Solo actualiza si cambió (optimización, no excepción de lógica)
+    const { data: actual } = await supabase
+      .from('proyectos').select('estado').eq('id', proyecto_id).single()
+    if (actual?.estado === nuevoEstado) continue
+
     await supabase
       .from('proyectos')
-      .update({ estado: nuevoEstadoProyecto, archivado: nuevoEstadoProyecto === 'cierre' })
-      .eq('id', p.id)
+      .update({ estado: nuevoEstado, archivado: nuevoEstado === 'cierre' })
+      .eq('id', proyecto_id)
   }
 }
 
