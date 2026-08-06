@@ -65,21 +65,39 @@ router.delete('/:id', requireAuth, requireRole('admin'), async (req, res) => {
 })
 
 /* ── Sincronización automática de estado de proyecto ─────────── */
-const COT_TO_PROYECTO_ESTADO = {
-  borrador:     'planificacion',
-  enviada:      'planificacion',
-  visita:       'planificacion',
-  aprobada:     'planificacion',
-  en_ejecucion: 'ejecucion',
-  ejecutada:    'cierre',
-  cerrada:      'cierre',
-  rechazada:    'cancelado',
-  perdida:      'cancelado',
+// Estados que se usan literalmente como estado del proyecto
+const ESTADOS_DIRECTOS = new Set(['aprobada', 'en_ejecucion', 'ejecutada', 'cerrada'])
+const PRIORIDAD_PROYECTO = { aprobada: 1, en_ejecucion: 2, ejecutada: 3, cerrada: 4 }
+
+async function resolverEstadoDesdeProyecto(supabase, proyectoId) {
+  const { data: linksCot } = await supabase
+    .from('proyecto_cotizaciones')
+    .select('cotizacion_id')
+    .eq('proyecto_id', proyectoId)
+
+  if (!linksCot?.length) return null
+
+  const { data: cots } = await supabase
+    .from('cotizaciones')
+    .select('estado')
+    .in('id', linksCot.map((l) => l.cotizacion_id))
+
+  if (!cots?.length) return null
+
+  const candidatos = cots.map((c) => {
+    if (ESTADOS_DIRECTOS.has(c.estado)) return c.estado
+    if (c.estado === 'rechazada' || c.estado === 'perdida') return 'cancelado'
+    console.warn(`[sync] estado inesperado '${c.estado}' en cotización de proyecto ${proyectoId}`)
+    return 'aprobada'
+  })
+
+  const nonCancelado = candidatos.filter((e) => e !== 'cancelado')
+  return nonCancelado.length
+    ? nonCancelado.reduce((best, e) => PRIORIDAD_PROYECTO[e] > PRIORIDAD_PROYECTO[best] ? e : best)
+    : 'cancelado'
 }
-const PRIORIDAD = { planificacion: 1, ejecucion: 2, cierre: 3 }
 
 async function sincronizarEstadoProyecto(supabase, cotizacionId) {
-  // Proyectos que contienen esta cotización
   const { data: linksProyecto } = await supabase
     .from('proyecto_cotizaciones')
     .select('proyecto_id')
@@ -88,35 +106,16 @@ async function sincronizarEstadoProyecto(supabase, cotizacionId) {
   if (!linksProyecto?.length) return
 
   for (const { proyecto_id } of linksProyecto) {
-    // Todas las cotizaciones del proyecto
-    const { data: linksCot } = await supabase
-      .from('proyecto_cotizaciones')
-      .select('cotizacion_id')
-      .eq('proyecto_id', proyecto_id)
+    const nuevoEstado = await resolverEstadoDesdeProyecto(supabase, proyecto_id)
+    if (!nuevoEstado) continue
 
-    if (!linksCot?.length) continue
-
-    const { data: cots } = await supabase
-      .from('cotizaciones')
-      .select('estado')
-      .in('id', linksCot.map((l) => l.cotizacion_id))
-
-    if (!cots?.length) continue
-
-    const mapped = cots.map((c) => COT_TO_PROYECTO_ESTADO[c.estado]).filter(Boolean)
-    const nonCancelado = mapped.filter((e) => e !== 'cancelado')
-    const nuevoEstado = nonCancelado.length
-      ? nonCancelado.reduce((best, e) => (PRIORIDAD[e] ?? 0) > (PRIORIDAD[best] ?? 0) ? e : best)
-      : 'cancelado'
-
-    // Solo actualiza si cambió (optimización, no excepción de lógica)
     const { data: actual } = await supabase
       .from('proyectos').select('estado').eq('id', proyecto_id).single()
     if (actual?.estado === nuevoEstado) continue
 
     await supabase
       .from('proyectos')
-      .update({ estado: nuevoEstado, archivado: nuevoEstado === 'cierre' })
+      .update({ estado: nuevoEstado, archivado: nuevoEstado === 'cerrada' })
       .eq('id', proyecto_id)
   }
 }
@@ -513,7 +512,6 @@ router.post('/:id/enviar-email-ejecucion', async (req, res) => {
 
 /* ── Backfill: recalcular estado de TODOS los proyectos existentes ── */
 // Endpoint temporal — llamar UNA sola vez desde Postman/navegador con token admin.
-// Eliminar o dejar inactivo una vez verificado el resultado.
 router.post('/admin/backfill-proyectos', requireAuth, requireRole('admin'), async (req, res) => {
   try {
     const { data: links } = await supabase
@@ -526,25 +524,8 @@ router.post('/admin/backfill-proyectos', requireAuth, requireRole('admin'), asyn
     const cambios = []
 
     for (const proyectoId of proyectoIds) {
-      const { data: linksCot } = await supabase
-        .from('proyecto_cotizaciones')
-        .select('cotizacion_id')
-        .eq('proyecto_id', proyectoId)
-
-      if (!linksCot?.length) continue
-
-      const { data: cots } = await supabase
-        .from('cotizaciones')
-        .select('estado')
-        .in('id', linksCot.map((l) => l.cotizacion_id))
-
-      if (!cots?.length) continue
-
-      const mapped     = cots.map((c) => COT_TO_PROYECTO_ESTADO[c.estado]).filter(Boolean)
-      const nonCancel  = mapped.filter((e) => e !== 'cancelado')
-      const nuevoEstado = nonCancel.length
-        ? nonCancel.reduce((best, e) => (PRIORIDAD[e] ?? 0) > (PRIORIDAD[best] ?? 0) ? e : best)
-        : 'cancelado'
+      const nuevoEstado = await resolverEstadoDesdeProyecto(supabase, proyectoId)
+      if (!nuevoEstado) continue
 
       const { data: actual } = await supabase
         .from('proyectos')
@@ -557,7 +538,7 @@ router.post('/admin/backfill-proyectos', requireAuth, requireRole('admin'), asyn
 
       await supabase
         .from('proyectos')
-        .update({ estado: nuevoEstado, archivado: nuevoEstado === 'cierre' })
+        .update({ estado: nuevoEstado, archivado: nuevoEstado === 'cerrada' })
         .eq('id', proyectoId)
 
       cambios.push({ id: proyectoId, codigo: actual.codigo, nombre: actual.nombre, antes: actual.estado, despues: nuevoEstado })

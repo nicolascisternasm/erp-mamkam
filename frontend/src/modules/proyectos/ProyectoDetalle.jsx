@@ -18,12 +18,11 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } fro
 /* ── Helpers ────────────────────────────────────────────────────── */
 
 const ESTADO_CONFIG = {
-  borrador:      { label: 'Borrador',      cls: 'bg-slate-100 text-slate-500'     },
-  planificacion: { label: 'Planificación', cls: 'bg-slate-100 text-slate-600'     },
-  ejecucion:     { label: 'Ejecución',     cls: 'bg-emerald-100 text-emerald-700' },
-  cierre:        { label: 'Cierre',        cls: 'bg-blue-100 text-blue-700'       },
-  pausado:       { label: 'Pausado',       cls: 'bg-yellow-100 text-yellow-700'   },
-  cancelado:     { label: 'Cancelado',     cls: 'bg-red-100 text-red-700'         },
+  aprobada:     { label: 'Aprobada',      cls: 'bg-emerald-100 text-emerald-700'  },
+  en_ejecucion: { label: 'En ejecución',  cls: 'bg-amber-100 text-amber-700'      },
+  ejecutada:    { label: 'Ejecutada',     cls: 'bg-teal-100 text-teal-700'        },
+  cerrada:      { label: 'Cerrada',       cls: 'bg-emerald-100 text-emerald-900'  },
+  cancelado:    { label: 'Cancelado',     cls: 'bg-red-100 text-red-700'          },
 }
 
 const TIPO_BITACORA = {
@@ -140,7 +139,7 @@ export default function ProyectoDetalle() {
   const [recEnviado,   setRecEnviado]   = useState(false)
 
   // Proyectos activos para selector de destino en modal gastos
-  const proyectosActivos = allProyectos.filter((p) => p.estado === 'ejecucion' && !p.archivado)
+  const proyectosActivos = allProyectos.filter((p) => p.estado === 'en_ejecucion' && !p.archivado)
 
   // Modales
   const [modalCot, setModalCot] = useState(false)

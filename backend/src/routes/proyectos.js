@@ -326,6 +326,18 @@ router.post('/', async (req, res) => {
     }
     const codigo = `${prefix}${String(nextNum).padStart(3, '0')}`
 
+    // Estado inicial: refleja el estado más avanzado de las cotizaciones seleccionadas
+    let estadoInicial = 'aprobada'
+    if (cotizacion_ids?.length > 0) {
+      const { data: cots } = await supabase
+        .from('cotizaciones').select('estado').in('id', cotizacion_ids)
+      if (cots?.length) {
+        const PRIO = { aprobada: 1, en_ejecucion: 2, ejecutada: 3, cerrada: 4 }
+        const validos = cots.map((c) => PRIO[c.estado] !== undefined ? c.estado : 'aprobada')
+        estadoInicial = validos.reduce((best, e) => (PRIO[e] ?? 0) > (PRIO[best] ?? 0) ? e : best)
+      }
+    }
+
     const { data: proyecto, error: eInsert } = await supabase
       .from('proyectos')
       .insert({
@@ -337,7 +349,7 @@ router.post('/', async (req, res) => {
         responsable_id: responsable_id != null ? String(responsable_id) : null,
         fecha_inicio_est,
         fecha_fin_est,
-        estado: 'borrador',
+        estado: estadoInicial,
         porcentaje_avance: 0,
       })
       .select('*')
@@ -539,7 +551,7 @@ router.patch('/:id/estado', async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('proyectos')
-      .update({ estado, archivado: estado === 'cierre' })
+      .update({ estado, archivado: estado === 'cerrada' })
       .eq('id', id)
       .eq('empresa_id', req.user.empresa_id)
       .select('*')

@@ -13,12 +13,11 @@ const COLORES_PROYECTO = [
 ]
 
 const ESTADO_CONFIG = {
-  borrador:      { label: 'Borrador',      cls: 'bg-slate-100 text-slate-500'     },
-  planificacion: { label: 'Planificación', cls: 'bg-slate-100 text-slate-600'     },
-  ejecucion:     { label: 'Ejecución',     cls: 'bg-emerald-100 text-emerald-700' },
-  cierre:        { label: 'Cierre',        cls: 'bg-blue-100 text-blue-700'       },
-  pausado:       { label: 'Pausado',       cls: 'bg-yellow-100 text-yellow-700'   },
-  cancelado:     { label: 'Cancelado',     cls: 'bg-red-100 text-red-700'         },
+  aprobada:     { label: 'Aprobada',      cls: 'bg-emerald-100 text-emerald-700'  },
+  en_ejecucion: { label: 'En ejecución',  cls: 'bg-amber-100 text-amber-700'      },
+  ejecutada:    { label: 'Ejecutada',     cls: 'bg-teal-100 text-teal-700'        },
+  cerrada:      { label: 'Cerrada',       cls: 'bg-emerald-100 text-emerald-900'  },
+  cancelado:    { label: 'Cancelado',     cls: 'bg-red-100 text-red-700'          },
 }
 
 function EstadoBadge({ estado }) {
@@ -79,9 +78,9 @@ export default function ProyectosPage() {
     return proyectos.filter((p) => {
       if (q && !p.nombre?.toLowerCase().includes(q) && !p.cliente?.toLowerCase().includes(q)) return false
       if (mostrarArchivados && !p.archivado) return false
-      if (!mostrarArchivados && p.archivado) return false
+      if (!mostrarArchivados && p.archivado && filtroEstado !== 'cerrada') return false
       if (filtroEstado !== 'todos' && p.estado !== filtroEstado) return false
-      if (filtroEstado !== 'cancelado' && p.estado === 'cancelado') return false
+      if (filtroEstado === 'todos' && p.estado === 'cancelado') return false
       if (filtroResponsable !== 'todos' && p.responsableId !== filtroResponsable) return false
       return true
     })
@@ -89,7 +88,7 @@ export default function ProyectosPage() {
 
   const stats = useMemo(() => {
     const total         = proyectos.filter((p) => !p.archivado).length
-    const activos       = proyectos.filter((p) => p.estado === 'ejecucion' && !p.archivado).length
+    const activos       = proyectos.filter((p) => p.estado === 'en_ejecucion' && !p.archivado).length
     const avanceProm    = total > 0
       ? Math.round(proyectos.reduce((s, p) => s + (p.porcentajeAvance ?? 0), 0) / total)
       : 0
@@ -116,12 +115,12 @@ export default function ProyectosPage() {
   }, [datosPlanificacion.proyectos])
 
   const FILTROS_ESTADO = [
-    { key: 'todos',         label: 'Todos'         },
-    { key: 'planificacion', label: 'Planificación' },
-    { key: 'ejecucion',     label: 'Ejecución'     },
-    { key: 'cierre',        label: 'Cierre'        },
-    { key: 'pausado',       label: 'Pausados'      },
-    { key: 'cancelado',     label: 'Cancelados'    },
+    { key: 'todos',        label: 'Todos'        },
+    { key: 'aprobada',     label: 'Aprobada'     },
+    { key: 'en_ejecucion', label: 'En ejecución' },
+    { key: 'ejecutada',    label: 'Ejecutada'    },
+    { key: 'cerrada',      label: 'Cerrada'      },
+    { key: 'cancelado',    label: 'Cancelados'   },
   ]
 
   return (
