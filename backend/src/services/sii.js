@@ -195,12 +195,12 @@ async function loginWebSII(rut, clave) {
 }
 
 async function consultarRCV(rut, dv, periodo, tipo = 'COMPRA', empresaId = null) {
-  console.log('[SII] consultarRCV iniciado - versión con loginWebSII')
-  const token = await obtenerToken()
+  const tipoUp = tipo.toUpperCase()
+  console.log('[SII] consultarRCV iniciado - tipo:', tipoUp, 'periodo:', periodo)
 
   let cookiesStr = null
 
-  // Leer cookies desde sii_config en Supabase si tenemos empresa_id
+  // Leer cookies de sesión web desde sii_config (obtenidas con loginWebSII)
   if (empresaId) {
     const { data: cfg } = await supabase
       .from('sii_config')
@@ -208,50 +208,61 @@ async function consultarRCV(rut, dv, periodo, tipo = 'COMPRA', empresaId = null)
       .eq('empresa_id', empresaId)
       .single()
     cookiesStr = cfg?.sii_cookies || null
-    console.log('[SII] cookies desde sii_config:', cookiesStr ? 'OK' : 'no encontradas')
+    console.log('[SII] cookies desde sii_config:', cookiesStr ? 'OK (no vacías)' : 'no encontradas')
   }
 
-  // Fallback: hacer login con clave de env si no hay cookies guardadas
+  // Fallback: login directo con SII_CLAVE de env
   if (!cookiesStr) {
     const claveSII = process.env.SII_CLAVE
     if (!claveSII) throw new Error('No hay cookies de sesión SII ni SII_CLAVE configurada')
+    console.log('[SII] sin cookies guardadas, haciendo login con SII_CLAVE')
     cookiesStr = await loginWebSII(rut, claveSII)
   }
 
-  const transactionId = crypto.randomUUID()
+  // Seleccionar endpoint según tipo — NO usamos token SOAP aquí, solo cookies web
+  const endpoint  = tipoUp === 'VENTA' ? 'getDetalleVenta' : 'getDetalleCompra'
+  const url       = `https://www4.sii.cl/consdcvinternetui/services/data/facadeService/${endpoint}`
+  const namespace = `cl.sii.sdi.lob.diii.consdcv.data.api.interfaces.FacadeService/${endpoint}`
 
-  const response = await axios.post(
-    'https://www4.sii.cl/consdcvinternetui/services/data/facadeService/getResumen',
-    {
-      metaData: {
-        namespace: 'cl.sii.sdi.lob.diii.consdcv.data.api.interfaces.FacadeService/getResumen',
-        conversationId: token,
-        transactionId,
-        page: null,
-      },
-      data: {
-        rutEmisor: rut,
-        dvEmisor: dv,
-        ptributario: periodo,
-        estadoContab: 'REGISTRO',
-        operacion: tipo,
-        busquedaInicial: true,
-      },
+  const body = {
+    metaData: {
+      namespace,
+      conversationId: crypto.randomUUID(),
+      transactionId:  crypto.randomUUID(),
+      page: null,
     },
-    {
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json, text/plain, */*',
-        'Origin': 'https://www4.sii.cl',
-        'Referer': 'https://www4.sii.cl/consdcvinternetui/',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Cookie': `${cookiesStr}; TOKEN=${token}; CSESSIONID=${token}`,
-      },
-    }
-  )
+    data: {
+      rutEmisor:    rut,
+      dvEmisor:     dv,
+      ptributario:  periodo,
+      estadoContab: 'REGISTRO',
+      codTipoDoc:   0,
+      operacion:    tipoUp,
+    },
+  }
+
+  console.log('[SII RCV] URL:', url)
+  console.log('[SII RCV] body:', JSON.stringify(body))
+  console.log('[SII RCV] cookiesStr presente:', !!cookiesStr)
+
+  const response = await axios.post(url, body, {
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept':       'application/json, text/plain, */*',
+      'Origin':       'https://www4.sii.cl',
+      'Referer':      'https://www4.sii.cl/consdcvinternetui/',
+      'User-Agent':   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      'Cookie':       cookiesStr,
+    },
+    validateStatus: () => true,
+  })
 
   console.log('[SII RCV] status:', response.status)
-  console.log('[SII RCV] data:', JSON.stringify(response.data).substring(0, 500))
+  console.log('[SII RCV] response.data (primeros 1000):', JSON.stringify(response.data).substring(0, 1000))
+
+  if (response.status >= 400) {
+    throw new Error(`SII respondió con status ${response.status} para ${endpoint}: ${JSON.stringify(response.data).substring(0, 300)}`)
+  }
 
   return response.data
 }

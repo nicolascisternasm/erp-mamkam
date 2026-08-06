@@ -1,11 +1,13 @@
 import { useState, useMemo, useRef } from 'react'
 import { useApp } from '../../context/AppContext'
+import { apiClient } from '../../services/apiClient'
 import { formatCLP, formatDate } from '../../utils/formatters'
 import Toast from '../../components/Toast'
 import { ConfirmModal } from '../../components/Modal'
 import {
   Upload, Plus, Search, Trash2, Pencil, FileText,
   TrendingDown, TrendingUp, Receipt, X, AlertCircle, CheckCircle2,
+  RefreshCw,
 } from 'lucide-react'
 
 /* ── Tipos de documento SII ──────────────────────────────────────── */
@@ -378,6 +380,7 @@ export default function FacturasSIIPage() {
   const [deleteId,     setDeleteId]     = useState(null)
   const [toast,        setToast]        = useState(null)
   const [importing,    setImporting]    = useState(false)
+  const [rcvLoading,   setRcvLoading]   = useState(false)
 
   const POR_PAGINA    = 10
   const MAX_REGISTROS = 50
@@ -453,6 +456,24 @@ export default function FacturasSIIPage() {
     }
   }
 
+  const actualizarRCV = async () => {
+    const year  = anioFilter || String(new Date().getFullYear())
+    const month = mesFilter  || String(new Date().getMonth() + 1).padStart(2, '0')
+    const periodo = `${year}${month}`
+    const tipo    = tab.toUpperCase() // 'COMPRA' | 'VENTA'
+
+    setRcvLoading(true)
+    try {
+      const data = await apiClient.get(`sii/rcv?periodo=${periodo}&tipo=${tipo}`)
+      console.log('[RCV] respuesta raw del SII (periodo:', periodo, 'tipo:', tipo, '):', data)
+      showToast('success', `RCV consultado (${periodo} · ${tipo}). Ver consola para respuesta cruda.`)
+    } catch (err) {
+      showToast('error', `Error al consultar RCV: ${err.message}`)
+    } finally {
+      setRcvLoading(false)
+    }
+  }
+
   const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
 
   return (
@@ -464,6 +485,15 @@ export default function FacturasSIIPage() {
           <p className="text-sm text-slate-500 mt-0.5">Registro de Compras y Ventas electrónicas</p>
         </div>
         <div className="flex gap-2">
+          <button
+            onClick={actualizarRCV}
+            disabled={rcvLoading}
+            className="btn-secondary disabled:opacity-50"
+            title={`Consultar RCV ${tab === 'compra' ? 'Compras' : 'Ventas'} desde el SII`}
+          >
+            <RefreshCw className={`w-4 h-4 ${rcvLoading ? 'animate-spin' : ''}`} />
+            Actualizar
+          </button>
           <button
             onClick={() => setModalImport(true)}
             disabled={importing}
