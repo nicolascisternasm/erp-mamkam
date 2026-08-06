@@ -6,6 +6,8 @@ const router = Router()
 
 const ESTADOS = ['nuevo', 'contactado', 'en_proceso', 'cerrado', 'perdido']
 
+const FULL_SELECT = '*, crm_formularios(producto, nombre_formulario), cliente_etiquetas(etiqueta_id, crm_etiquetas(id, nombre, color))'
+
 const fromCliente = (r) => ({
   id:               r.id,
   nombre:           r.nombre,
@@ -19,6 +21,8 @@ const fromCliente = (r) => ({
   nombreFormulario: r.crm_formularios?.nombre_formulario || null,
   datosAdicionales: r.datos_adicionales,
   estado:           r.estado,
+  fechaRecordatorio: r.fecha_recordatorio || null,
+  etiquetas:        (r.cliente_etiquetas || []).map((ce) => ce.crm_etiquetas).filter(Boolean),
   createdAt:        r.created_at,
   updatedAt:        r.updated_at,
 })
@@ -226,7 +230,7 @@ router.get('/clientes', async (req, res) => {
   const empresaId = req.user.empresa_id
   const { data, error } = await supabase
     .from('clientes')
-    .select('*, crm_formularios(producto, nombre_formulario)')
+    .select(FULL_SELECT)
     .eq('empresa_id', empresaId)
     .order('created_at', { ascending: false })
   if (error) {
@@ -236,22 +240,30 @@ router.get('/clientes', async (req, res) => {
   res.json({ success: true, data: (data || []).map(fromCliente) })
 })
 
-/* PATCH /api/crm/clientes/:id — actualiza el estado de un cliente */
+/* PATCH /api/crm/clientes/:id — actualiza estado y/o fecha_recordatorio */
 router.patch('/clientes/:id', async (req, res) => {
   const empresaId = req.user.empresa_id
   const { id } = req.params
-  const { estado } = req.body
+  const { estado, fecha_recordatorio } = req.body
 
-  if (!ESTADOS.includes(estado)) {
-    return res.status(400).json({ success: false, error: { message: 'Estado inválido' } })
+  const updates = { updated_at: new Date().toISOString() }
+
+  if (estado !== undefined) {
+    if (!ESTADOS.includes(estado)) {
+      return res.status(400).json({ success: false, error: { message: 'Estado inválido' } })
+    }
+    updates.estado = estado
+  }
+  if ('fecha_recordatorio' in req.body) {
+    updates.fecha_recordatorio = fecha_recordatorio || null
   }
 
   const { data, error } = await supabase
     .from('clientes')
-    .update({ estado, updated_at: new Date().toISOString() })
+    .update(updates)
     .eq('id', id)
     .eq('empresa_id', empresaId)
-    .select()
+    .select(FULL_SELECT)
     .maybeSingle()
 
   if (error) {
@@ -371,6 +383,78 @@ router.delete('/clientes/:id/comentarios/:comentarioId', async (req, res) => {
     console.error('[crm/comentarios DELETE]', error.message)
     return res.status(500).json({ success: false, error: { message: error.message } })
   }
+  res.json({ success: true })
+})
+
+/* ── ETIQUETAS ──────────────────────────────────────────────────── */
+
+router.get('/etiquetas', async (req, res) => {
+  const { data, error } = await supabase
+    .from('crm_etiquetas')
+    .select('*')
+    .eq('empresa_id', req.user.empresa_id)
+    .order('nombre')
+  if (error) return res.status(500).json({ success: false, error: { message: error.message } })
+  res.json({ success: true, data: data || [] })
+})
+
+router.post('/etiquetas', async (req, res) => {
+  const { nombre, color } = req.body
+  if (!nombre?.trim() || !color) {
+    return res.status(400).json({ success: false, error: { message: 'nombre y color requeridos' } })
+  }
+  const { data, error } = await supabase
+    .from('crm_etiquetas')
+    .insert({ empresa_id: req.user.empresa_id, nombre: nombre.trim(), color })
+    .select()
+    .single()
+  if (error) return res.status(500).json({ success: false, error: { message: error.message } })
+  res.json({ success: true, data })
+})
+
+router.patch('/etiquetas/:id', async (req, res) => {
+  const { nombre, color } = req.body
+  const updates = {}
+  if (nombre !== undefined) updates.nombre = nombre.trim()
+  if (color !== undefined) updates.color = color
+  const { data, error } = await supabase
+    .from('crm_etiquetas')
+    .update(updates)
+    .eq('id', req.params.id)
+    .eq('empresa_id', req.user.empresa_id)
+    .select()
+    .single()
+  if (error) return res.status(500).json({ success: false, error: { message: error.message } })
+  res.json({ success: true, data })
+})
+
+router.delete('/etiquetas/:id', async (req, res) => {
+  const { error } = await supabase
+    .from('crm_etiquetas')
+    .delete()
+    .eq('id', req.params.id)
+    .eq('empresa_id', req.user.empresa_id)
+  if (error) return res.status(500).json({ success: false, error: { message: error.message } })
+  res.json({ success: true })
+})
+
+router.post('/clientes/:id/etiquetas', async (req, res) => {
+  const { etiqueta_id } = req.body
+  if (!etiqueta_id) return res.status(400).json({ success: false, error: { message: 'etiqueta_id requerido' } })
+  const { error } = await supabase
+    .from('cliente_etiquetas')
+    .insert({ cliente_id: req.params.id, etiqueta_id })
+  if (error) return res.status(500).json({ success: false, error: { message: error.message } })
+  res.json({ success: true })
+})
+
+router.delete('/clientes/:id/etiquetas/:etiquetaId', async (req, res) => {
+  const { error } = await supabase
+    .from('cliente_etiquetas')
+    .delete()
+    .eq('cliente_id', req.params.id)
+    .eq('etiqueta_id', req.params.etiquetaId)
+  if (error) return res.status(500).json({ success: false, error: { message: error.message } })
   res.json({ success: true })
 })
 
