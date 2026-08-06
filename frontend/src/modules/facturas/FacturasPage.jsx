@@ -438,9 +438,10 @@ export default function FacturasPage() {
   const [mes,        setMes]        = useState(String(now.getMonth() + 1))
   const [anio,       setAnio]       = useState(String(now.getFullYear()))
   const [search,     setSearch]     = useState('')
-  const [showImport, setShowImport] = useState(false)
-  const [showNueva,  setShowNueva]  = useState(false)
-  const [toast,      setToast]      = useState(null)
+  const [showImport,   setShowImport]   = useState(false)
+  const [showNueva,    setShowNueva]    = useState(false)
+  const [toast,        setToast]        = useState(null)
+  const [siiLoading,   setSiiLoading]   = useState(false)
 
   const years = Array.from({ length: 5 }, (_, i) => String(now.getFullYear() - i))
 
@@ -489,6 +490,21 @@ export default function FacturasPage() {
     setToast({ message: isEdit ? 'Factura actualizada' : 'Factura creada', type: 'success' })
   }
 
+  const sincronizarSII = async () => {
+    const periodo = `${anio}${String(mes).padStart(2, '0')}`
+    const tipo    = activeTab === 'venta' ? 'VENTA' : 'COMPRA'
+    setSiiLoading(true)
+    try {
+      const data = await apiClient.get(`sii/rcv?periodo=${periodo}&tipo=${tipo}`)
+      console.log('[SII RCV] respuesta raw (periodo:', periodo, 'tipo:', tipo, '):', data)
+      setToast({ message: `SII consultado (${periodo} · ${tipo}). Ver consola para respuesta cruda.`, type: 'success' })
+    } catch (err) {
+      setToast({ message: `Error al consultar SII: ${err.message}`, type: 'error' })
+    } finally {
+      setSiiLoading(false)
+    }
+  }
+
   const filtradas = facturas.filter((f) => {
     if (!search) return true
     const q = search.toLowerCase()
@@ -534,7 +550,7 @@ export default function FacturasPage() {
           >
             {years.map((y) => <option key={y}>{y}</option>)}
           </select>
-          <button onClick={loadData} className="btn-secondary" title="Actualizar">
+          <button onClick={loadData} className="btn-secondary" title="Refrescar lista">
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
         </div>
@@ -580,6 +596,15 @@ export default function FacturasPage() {
         </div>
 
         <div className="flex items-center gap-2 ml-auto">
+          <button
+            onClick={sincronizarSII}
+            disabled={siiLoading}
+            className="btn-secondary disabled:opacity-50"
+            title={`Sincronizar ${tipoLabel} desde el SII`}
+          >
+            <RefreshCw className={`w-4 h-4 ${siiLoading ? 'animate-spin' : ''}`} />
+            Sincronizar con SII
+          </button>
           <button onClick={() => setShowImport(true)} className="btn-secondary">
             <Upload className="w-4 h-4" />
             Importar CSV
