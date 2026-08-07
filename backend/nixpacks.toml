@@ -1,6 +1,0 @@
-# Instala Chromium y sus dependencias de sistema durante el build de Railway.
-# Playwright busca el browser en PLAYWRIGHT_BROWSERS_PATH (configurar en Railway UI como "0"
-# para que instale junto al paquete npm y esté disponible en runtime).
-[phases.chromium]
-  dependsOn = ['install']
-  cmds = ['npx playwright install --with-deps chromium']
