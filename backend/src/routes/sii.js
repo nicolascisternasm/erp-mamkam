@@ -38,7 +38,10 @@ router.patch('/clave', requireAuth, async (req, res) => {
   try {
     const { error } = await supabase
       .from('sii_config')
-      .upsert({ empresa_id: req.user.empresa_id, clave_sii: clave.trim() }, { onConflict: 'empresa_id' })
+      .upsert(
+        { empresa_id: req.user.empresa_id, rut: process.env.SII_RUT, clave_sii: clave.trim() },
+        { onConflict: 'empresa_id' }
+      )
     if (error) throw error
     res.json({ data: { ok: true } })
   } catch (err) {
