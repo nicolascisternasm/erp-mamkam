@@ -205,6 +205,7 @@ async function loginWebSII(rut, clave) {
       'https://herculesr.sii.cl/cgi_AUT2000/autInicio.cgi',
       loginData.toString(),
       {
+        httpsAgent: siiAgent, // herculesr también tiene la incompatibilidad RSA-PSS de OpenSSL 3.x
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
