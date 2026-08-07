@@ -171,14 +171,22 @@ async function loginWebSII(rut, clave) {
   const jarToStr = (jar) => [...jar.values()].join('; ')
 
   // ── Paso 1: página inicial (recoge cookies WAF/sesión de zeusr) ──
-  const resp1 = await axios.get('https://zeusr.sii.cl/AUT2000/InicioAutenticacion.html', {
-    httpsAgent: siiAgent,
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      'Accept': 'text/html,application/xhtml+xml',
-    },
-    maxRedirects: 5,
-  })
+  // Sin siiAgent — zeusr.sii.cl usa TLS estándar compatible con Node/OpenSSL 3.x.
+  // El siiAgent (SSL_OP_LEGACY_SERVER_CONNECT) es solo para palena.sii.cl (SOAP).
+  let resp1
+  try {
+    resp1 = await axios.get('https://zeusr.sii.cl/AUT2000/InicioAutenticacion.html', {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'text/html,application/xhtml+xml',
+      },
+      maxRedirects: 5,
+    })
+  } catch (err) {
+    console.error('[SII Login] FALLO paso 1 (zeusr GET):', err.code, err.message)
+    console.error('[SII Login] stack paso 1:', err.stack)
+    throw err
+  }
 
   let jar = mergeCookies(new Map(), parseCookies(resp1.headers['set-cookie']))
   console.log('[SII Login] paso 1 —', jar.size, 'cookies:', [...jar.keys()].join(', '))
@@ -191,37 +199,49 @@ async function loginWebSII(rut, clave) {
     referencia: 'https://www4.sii.cl/consdcvinternetui/#/index',
   })
 
-  const resp2 = await axios.post(
-    'https://herculesr.sii.cl/cgi_AUT2000/autInicio.cgi',
-    loginData.toString(),
-    {
-      httpsAgent: siiAgent,
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Referer': 'https://zeusr.sii.cl/AUT2000/InicioAutenticacion.html',
-        'Origin': 'https://zeusr.sii.cl',
-        'Cookie': jarToStr(jar),
-      },
-      maxRedirects: 5,
-      validateStatus: (s) => s < 500,
-    }
-  )
+  let resp2
+  try {
+    resp2 = await axios.post(
+      'https://herculesr.sii.cl/cgi_AUT2000/autInicio.cgi',
+      loginData.toString(),
+      {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Referer': 'https://zeusr.sii.cl/AUT2000/InicioAutenticacion.html',
+          'Origin': 'https://zeusr.sii.cl',
+          'Cookie': jarToStr(jar),
+        },
+        maxRedirects: 5,
+        validateStatus: (s) => s < 500,
+      }
+    )
+  } catch (err) {
+    console.error('[SII Login] FALLO paso 2 (herculesr POST):', err.code, err.message)
+    console.error('[SII Login] stack paso 2:', err.stack)
+    throw err
+  }
 
   jar = mergeCookies(jar, parseCookies(resp2.headers['set-cookie']))
   console.log('[SII Login] paso 2 — status:', resp2.status, '—', jar.size, 'cookies:', [...jar.keys()].join(', '))
 
   // ── Paso 3: navegar al portal RCV para obtener cookies de sesión de www4 ──
-  const resp3 = await axios.get('https://www4.sii.cl/consdcvinternetui/', {
-    httpsAgent: siiAgent,
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      'Cookie': jarToStr(jar),
-      'Referer': 'https://www.sii.cl/',
-    },
-    maxRedirects: 5,
-    validateStatus: (s) => s < 500,
-  })
+  let resp3
+  try {
+    resp3 = await axios.get('https://www4.sii.cl/consdcvinternetui/', {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Cookie': jarToStr(jar),
+        'Referer': 'https://www.sii.cl/',
+      },
+      maxRedirects: 5,
+      validateStatus: (s) => s < 500,
+    })
+  } catch (err) {
+    console.error('[SII Login] FALLO paso 3 (www4 GET):', err.code, err.message)
+    console.error('[SII Login] stack paso 3:', err.stack)
+    throw err
+  }
 
   jar = mergeCookies(jar, parseCookies(resp3.headers['set-cookie']))
   const cookiesFinal = jarToStr(jar)
@@ -281,8 +301,8 @@ async function consultarRCV(rut, dv, periodo, tipo = 'COMPRA', empresaId = null)
   console.log('[SII RCV] body:', JSON.stringify(body))
   console.log('[SII RCV] cookiesStr presente:', !!cookiesStr)
 
+  // Sin siiAgent — www4.sii.cl usa TLS estándar; el agent solo aplica a palena.sii.cl (SOAP).
   const axiosConfig = {
-    httpsAgent: siiAgent,
     headers: {
       'User-Agent':       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
       'Referer':          'https://www4.sii.cl/consdcvinternetui/',
