@@ -397,35 +397,78 @@ const parseFechaHora = s => {
 async function guardarDocumentosRCV(documentos, tipo, empresaId) {
   if (!Array.isArray(documentos) || !documentos.length) return { guardados: 0 }
 
-  const rows = documentos.map(doc => ({
-    id:                  newUUID(),
-    empresa_id:          empresaId,
-    tipo:                tipo,
-    tipo_doc:            String(doc.detTipoDoc),
-    tipo_compra_venta:   '',
-    folio:               String(doc.detNroDoc ?? ''),
-    numero_interno:      '',
-    rut_contraparte:     `${doc.detRutDoc}-${doc.detDvDoc}`,
-    razon_social:        doc.detRznSoc ?? '',
-    fecha:               parseFecha(doc.detFchDoc),
-    fecha_recepcion:     parseFechaHora(doc.detFecRecepcion),
-    monto_exento:        doc.detMntExe ?? 0,
-    neto:                doc.detMntNeto ?? 0,
-    iva:                 doc.detMntIVA ?? 0,
-    iva_no_recuperable:  doc.detMntIVANoRec ?? 0,
-    total:               doc.detMntTotal ?? 0,
-    estado:              'vigente',
-    sii_detalle_codigo:  doc.detCodigo ?? null,
-    periodo:             String(doc.detPcarga ?? ''),
-  }))
+  let guardados = 0
 
-  const { data, error } = await supabase
-    .from('facturas_sii')
-    .upsert(rows, { onConflict: 'sii_detalle_codigo', ignoreDuplicates: false })
-    .select('id')
+  for (const doc of documentos) {
+    const valores = {
+      empresa_id:          empresaId,
+      tipo,
+      tipo_doc:            String(doc.detTipoDoc),
+      tipo_compra_venta:   '',
+      folio:               String(doc.detNroDoc ?? ''),
+      numero_interno:      '',
+      rut_contraparte:     `${doc.detRutDoc}-${doc.detDvDoc}`,
+      razon_social:        doc.detRznSoc ?? '',
+      fecha:               parseFecha(doc.detFchDoc),
+      fecha_recepcion:     parseFechaHora(doc.detFecRecepcion),
+      monto_exento:        doc.detMntExe ?? 0,
+      neto:                doc.detMntNeto ?? 0,
+      iva:                 doc.detMntIVA ?? 0,
+      iva_no_recuperable:  doc.detMntIVANoRec ?? 0,
+      total:               doc.detMntTotal ?? 0,
+      estado:              'vigente',
+      sii_detalle_codigo:  doc.detCodigo ?? null,
+      periodo:             String(doc.detPcarga ?? ''),
+    }
 
-  if (error) throw error
-  return { guardados: data?.length ?? 0 }
+    // Paso 1: buscar por sii_detalle_codigo
+    if (doc.detCodigo != null) {
+      const { data: existing } = await supabase
+        .from('facturas_sii')
+        .select('id')
+        .eq('sii_detalle_codigo', doc.detCodigo)
+        .maybeSingle()
+
+      if (existing) {
+        const { error } = await supabase
+          .from('facturas_sii')
+          .update(valores)
+          .eq('id', existing.id)
+        if (error) throw error
+        guardados++
+        continue
+      }
+    }
+
+    // Paso 2: buscar por clave legada folio+empresa_id+tipo
+    const folio = String(doc.detNroDoc ?? '')
+    const { data: legacy } = await supabase
+      .from('facturas_sii')
+      .select('id')
+      .eq('folio', folio)
+      .eq('empresa_id', empresaId)
+      .eq('tipo', tipo)
+      .maybeSingle()
+
+    if (legacy) {
+      const { error } = await supabase
+        .from('facturas_sii')
+        .update(valores)
+        .eq('id', legacy.id)
+      if (error) throw error
+      guardados++
+      continue
+    }
+
+    // Paso 3: insertar nuevo
+    const { error } = await supabase
+      .from('facturas_sii')
+      .insert({ id: newUUID(), ...valores })
+    if (error) throw error
+    guardados++
+  }
+
+  return { guardados }
 }
 
 module.exports = { obtenerToken, consultarRCVPlaywright, guardarDocumentosRCV, obtenerSemilla }
