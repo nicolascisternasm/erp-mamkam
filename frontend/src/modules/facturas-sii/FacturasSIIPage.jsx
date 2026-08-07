@@ -462,14 +462,22 @@ export default function FacturasSIIPage() {
     const periodo = `${year}${month}`
     const tipo    = tab.toUpperCase() // 'COMPRA' | 'VENTA'
 
+    const controller = new AbortController()
+    const timeoutId  = setTimeout(() => controller.abort(), 65000)
+
     setRcvLoading(true)
     try {
-      const data = await apiClient.get(`sii/rcv?periodo=${periodo}&tipo=${tipo}`)
+      const data = await apiClient.get(`sii/rcv?periodo=${periodo}&tipo=${tipo}`, controller.signal)
       console.log('[RCV] respuesta raw del SII (periodo:', periodo, 'tipo:', tipo, '):', data)
       showToast('success', `RCV consultado (${periodo} · ${tipo}). Ver consola para respuesta cruda.`)
     } catch (err) {
-      showToast('error', `Error al consultar RCV: ${err.message}`)
+      if (err.name === 'AbortError') {
+        showToast('error', 'Tiempo de espera agotado al conectar con el SII')
+      } else {
+        showToast('error', `Error al consultar RCV: ${err.message}`)
+      }
     } finally {
+      clearTimeout(timeoutId)
       setRcvLoading(false)
     }
   }
@@ -492,7 +500,7 @@ export default function FacturasSIIPage() {
             title={`Consultar RCV ${tab === 'compra' ? 'Compras' : 'Ventas'} desde el SII`}
           >
             <RefreshCw className={`w-4 h-4 ${rcvLoading ? 'animate-spin' : ''}`} />
-            Actualizar
+            {rcvLoading ? 'Conectando con el SII, puede tardar hasta 30 seg…' : 'Actualizar'}
           </button>
           <button
             onClick={() => setModalImport(true)}

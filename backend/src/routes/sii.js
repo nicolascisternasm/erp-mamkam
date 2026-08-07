@@ -1,14 +1,14 @@
 const { Router } = require('express')
 const { requireAuth } = require('../middleware/auth')
-const { obtenerToken, consultarRCV, loginWebSII } = require('../services/sii')
+const { obtenerToken, consultarRCVPlaywright } = require('../services/sii')
 const supabase = require('../lib/supabase')
 
 const router = Router()
 
-// GET /api/sii/test — probar autenticación con el SII
+// GET /api/sii/test — verifica autenticación SOAP con palena.sii.cl (para emisión DTE futura)
 router.get('/test', requireAuth, async (req, res) => {
   try {
-    console.log('[SII] Probando autenticación...')
+    console.log('[SII] Probando autenticación SOAP...')
     const token = await obtenerToken()
     res.json({ data: { ok: true, token: token.substring(0, 20) + '...' } })
   } catch (err) {
@@ -17,52 +17,38 @@ router.get('/test', requireAuth, async (req, res) => {
   }
 })
 
-// POST /api/sii/login — login web con clave tributaria; guarda cookies en sii_config
-router.post('/login', requireAuth, async (req, res) => {
-  try {
-    const { clave } = req.body || {}
-    if (!clave) return res.status(400).json({ error: { message: 'clave requerida' } })
-
-    const empresaId = req.user.empresa_id
-    const rut = process.env.SII_RUT || '78348727'
-
-    console.log('[SII login] iniciando login web para empresa:', empresaId)
-    const cookiesStr = await loginWebSII(rut, clave)
-
-    const ultimoLogin = new Date().toISOString()
-    const { error } = await supabase.from('sii_config').upsert(
-      { empresa_id: empresaId, rut, sii_cookies: cookiesStr, ultimo_login: ultimoLogin, activo: true },
-      { onConflict: 'empresa_id' }
-    )
-    if (error) throw new Error(error.message)
-
-    console.log('[SII login] cookies guardadas para empresa:', empresaId)
-    res.json({ data: { ok: true, ultimo_login: ultimoLogin } })
-  } catch (err) {
-    console.error('[SII login] error:', err.message)
-    res.status(500).json({ error: { message: err.message } })
-  }
-})
-
-// GET /api/sii/estado — estado de conexión SII de la empresa
+// GET /api/sii/estado — chequea si sii_config.clave_sii está configurada para la empresa
 router.get('/estado', requireAuth, async (req, res) => {
   try {
-    const empresaId = req.user.empresa_id
     const { data } = await supabase
       .from('sii_config')
-      .select('ultimo_login, sii_cookies')
-      .eq('empresa_id', empresaId)
-      .single()
+      .select('clave_sii')
+      .eq('empresa_id', req.user.empresa_id)
+      .maybeSingle()
+    res.json({ data: { conectado: !!(data?.clave_sii), modo: 'playwright' } })
+  } catch {
+    res.json({ data: { conectado: false, modo: 'playwright' } })
+  }
+})
 
-    const conectado = !!(data?.sii_cookies && data?.ultimo_login)
-    res.json({ data: { conectado, ultimo_login: data?.ultimo_login || null } })
+// PATCH /api/sii/clave — guarda o actualiza la clave tributaria en sii_config
+router.patch('/clave', requireAuth, async (req, res) => {
+  const { clave } = req.body
+  if (!clave?.trim()) return res.status(400).json({ error: { message: 'clave requerida' } })
+  try {
+    const { error } = await supabase
+      .from('sii_config')
+      .upsert({ empresa_id: req.user.empresa_id, clave_sii: clave.trim() }, { onConflict: 'empresa_id' })
+    if (error) throw error
+    res.json({ data: { ok: true } })
   } catch (err) {
-    console.error('[SII estado] error:', err.message)
     res.status(500).json({ error: { message: err.message } })
   }
 })
 
-// GET /api/sii/rcv?periodo=202407&tipo=COMPRA
+// GET /api/sii/rcv?periodo=202407&tipo=COMPRA|VENTA
+// Lanza un browser Playwright headless, hace login con la clave almacenada en sii_config,
+// y extrae los documentos del RCV para el período solicitado.
 router.get('/rcv', requireAuth, async (req, res) => {
   try {
     const { periodo, tipo = 'COMPRA' } = req.query
@@ -70,8 +56,19 @@ router.get('/rcv', requireAuth, async (req, res) => {
 
     const rut = process.env.SII_RUT || '78348727'
     const dv  = process.env.SII_DV  || '6'
-    const data = await consultarRCV(rut, dv, periodo, tipo, req.user.empresa_id)
-    res.json({ data })
+
+    const { data: config } = await supabase
+      .from('sii_config')
+      .select('clave_sii')
+      .eq('empresa_id', req.user.empresa_id)
+      .maybeSingle()
+
+    if (!config?.clave_sii) {
+      return res.status(503).json({ error: { message: 'Clave SII no configurada — ingrésala en Configuración > Integraciones' } })
+    }
+
+    const docs = await consultarRCVPlaywright(rut, dv, config.clave_sii, periodo, tipo)
+    res.json({ data: docs })
   } catch (err) {
     console.error('[SII] Error RCV:', err.message)
     res.status(500).json({ error: { message: err.message } })

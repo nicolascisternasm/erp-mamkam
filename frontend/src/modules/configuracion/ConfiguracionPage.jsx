@@ -1095,16 +1095,16 @@ function TabIntegraciones() {
     finally { setBusy(false) }
   }
 
-  const conectarSII = async () => {
+  const guardarClaveSII = async () => {
     if (!siiClave.trim()) return
     setSiiConectando(true)
     setSiiError(null)
     try {
-      await apiClient.post('/sii/login', { clave: siiClave })
+      await apiClient.patch('/sii/clave', { clave: siiClave })
       setSiiClave('')
       await cargarEstadoSII()
     } catch (err) {
-      setSiiError(err.message || 'Error al conectar con el SII')
+      setSiiError(err.message || 'Error al guardar la clave SII')
     } finally {
       setSiiConectando(false)
     }
@@ -1177,7 +1177,7 @@ function TabIntegraciones() {
           <div>
             <h3 className="text-base font-semibold text-slate-900">SII — Servicio de Impuestos Internos</h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Conecta con tu clave tributaria para consultar el Registro de Compras y Ventas (RCV).
+              La clave tributaria se usa para sincronizar automáticamente el Registro de Compras y Ventas (RCV).
             </p>
           </div>
         </div>
@@ -1186,31 +1186,15 @@ function TabIntegraciones() {
           <div className="flex justify-center py-6"><RefreshCw className="w-5 h-5 text-slate-300 animate-spin" /></div>
         ) : (
           <>
-            {siiEstado?.conectado && (
-              <div className="bg-slate-50 rounded-lg p-4">
-                <div className="flex items-center gap-2 text-sm">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-                  <span className="font-medium text-slate-800">Conectado</span>
-                </div>
-                {siiEstado.ultimo_login && (
-                  <p className="text-xs text-slate-500 mt-1 pl-6">
-                    Último login: {new Date(siiEstado.ultimo_login).toLocaleString('es-CL')}
-                  </p>
-                )}
-              </div>
-            )}
-
             <div className="space-y-2">
-              <label className="block text-xs font-medium text-slate-600">
-                {siiEstado?.conectado ? 'Reconectar con nueva clave' : 'Clave tributaria SII'}
-              </label>
+              <label className="block text-xs font-medium text-slate-600">Clave Tributaria</label>
               <div className="relative">
                 <input
                   type={siiShowClave ? 'text' : 'password'}
                   value={siiClave}
                   onChange={e => setSiiClave(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && conectarSII()}
-                  placeholder="Ingresa tu clave tributaria"
+                  onKeyDown={e => e.key === 'Enter' && guardarClaveSII()}
+                  placeholder="Ingresa la clave tributaria"
                   className="input-base pr-10"
                 />
                 <button
@@ -1229,18 +1213,23 @@ function TabIntegraciones() {
             </div>
 
             <button
-              onClick={conectarSII}
+              onClick={guardarClaveSII}
               disabled={siiConectando || !siiClave.trim()}
               className="btn-primary w-full justify-center disabled:opacity-50"
               style={{ backgroundColor: '#cc0000' }}
             >
               {siiConectando
-                ? <><RefreshCw className="w-4 h-4 animate-spin" />Conectando...</>
-                : siiEstado?.conectado
-                  ? <><RefreshCw className="w-4 h-4" />Reconectar</>
-                  : <><Building2 className="w-4 h-4" />Conectar con SII</>
+                ? <><RefreshCw className="w-4 h-4 animate-spin" />Guardando...</>
+                : <><Building2 className="w-4 h-4" />Guardar</>
               }
             </button>
+
+            <div className="flex items-center gap-2 text-sm">
+              {siiEstado?.conectado
+                ? <><CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" /><span className="text-slate-600">Configurado</span></>
+                : <><AlertCircle className="w-4 h-4 text-amber-500 flex-shrink-0" /><span className="text-slate-500">Falta ingresar la clave tributaria</span></>
+              }
+            </div>
           </>
         )}
       </div>

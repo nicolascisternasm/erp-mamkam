@@ -8,7 +8,7 @@ function getToken() {
   } catch { return null }
 }
 
-async function request(method, path, body) {
+async function request(method, path, body, signal) {
   const url = `${BASE_URL}/${path.replace(/^\/+/, '')}`
   console.log('[apiClient] request:', method, url, 'token existe:', !!getToken())
   const token = getToken()
@@ -19,6 +19,7 @@ async function request(method, path, body) {
     method,
     headers,
     body: body !== undefined ? JSON.stringify(body) : undefined,
+    signal,
   })
 
   const text = await res.text()
@@ -41,9 +42,9 @@ async function request(method, path, body) {
 }
 
 export const apiClient = {
-  get:    (path)       => request('GET',    path),
-  post:   (path, body) => request('POST',   path, body),
-  put:    (path, body) => request('PUT',    path, body),
-  patch:  (path, body) => request('PATCH',  path, body),
-  delete: (path)       => request('DELETE', path),
+  get:    (path, signal) => request('GET',    path, undefined, signal),
+  post:   (path, body)   => request('POST',   path, body),
+  put:    (path, body)   => request('PUT',    path, body),
+  patch:  (path, body)   => request('PATCH',  path, body),
+  delete: (path)         => request('DELETE', path),
 }

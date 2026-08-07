@@ -154,210 +154,222 @@ async function obtenerToken() {
   return match[1]
 }
 
-async function loginWebSII(rut, clave) {
-  // Extrae "nombre=valor" de cada entrada del array Set-Cookie,
-  // descartando atributos (Path=, Domain=, Expires=, HttpOnly, Secure…).
-  const parseCookies = (setCookieArr) =>
-    (setCookieArr || []).map((c) => c.split(';')[0].trim()).filter(Boolean)
+async function consultarRCVPlaywright(rut, dv, clave, periodo, operacion) {
+  const { chromium } = require('playwright')
+  const operUp = (operacion || 'AMBOS').toUpperCase()
 
-  // Fusiona un jar existente (Map nombre→"nombre=valor") con cookies nuevas.
-  // Si el mismo nombre aparece en varios pasos, gana el valor más reciente.
-  const mergeCookies = (jar, newOnes) => {
-    const map = new Map(jar)
-    newOnes.forEach((c) => map.set(c.split('=')[0], c))
-    return map
-  }
+  let browser
+  const T          = 20000 // timeout por operación de UI (ms)
+  const DELAY_RUT  = 200   // ms entre teclas del RUT para el reformateo JS
 
-  const jarToStr = (jar) => [...jar.values()].join('; ')
-
-  // ── Paso 1: página inicial (recoge cookies WAF/sesión de zeusr) ──
-  // Sin siiAgent — zeusr.sii.cl usa TLS estándar compatible con Node/OpenSSL 3.x.
-  // El siiAgent (SSL_OP_LEGACY_SERVER_CONNECT) es solo para palena.sii.cl (SOAP).
-  let resp1
-  try {
-    resp1 = await axios.get('https://zeusr.sii.cl/AUT2000/InicioAutenticacion.html', {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'text/html,application/xhtml+xml',
-      },
-      maxRedirects: 5,
+  const run = async () => {
+    browser = await chromium.launch({
+      headless: true,
+      // --no-sandbox obligatorio en Railway (corre como root en container)
+      // --disable-dev-shm-usage evita crashes por /dev/shm de 64 MB en Docker
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
     })
-  } catch (err) {
-    console.error('[SII Login] FALLO paso 1 (zeusr GET):', err.code, err.message)
-    console.error('[SII Login] stack paso 1:', err.stack)
-    throw err
+
+    try {
+      const context = await browser.newContext({
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+      })
+      const page = await context.newPage()
+
+      // ── Paso 1: www.sii.cl ──
+      console.log('[RCV] paso 1 — www.sii.cl')
+      await page.goto('https://www.sii.cl', { waitUntil: 'networkidle', timeout: T })
+
+      // ── Paso 2: misiir.sii.cl → redirige al formulario de login ──
+      console.log('[RCV] paso 2 — misiir.sii.cl')
+      await page.goto('https://misiir.sii.cl/cgi_misii/siihome.cgi', {
+        referer: 'https://www.sii.cl',
+        waitUntil: 'networkidle',
+        timeout: T,
+      })
+
+      if (!page.url().includes('InicioAutenticacion') && !page.url().includes('zeusr')) {
+        const hrefLogin = await page.$eval(
+          'a[href*="zeusr"], a[href*="InicioAutenticacion"], a[href*="AUT2000"]',
+          a => a.href
+        ).catch(() => null)
+        if (hrefLogin) {
+          await page.goto(hrefLogin, { referer: page.url(), waitUntil: 'networkidle', timeout: T })
+        }
+      }
+
+      // ── Paso 3: completar formulario de login ──
+      console.log('[RCV] paso 3 — login')
+      const rutCompleto = `${rut}${dv}`
+
+      const teclearRut = async () => {
+        const loc = page.locator('#rutcntr')
+        await loc.click({ timeout: T })
+        await page.keyboard.press('Control+a')
+        await page.keyboard.press('Delete')
+        await page.waitForTimeout(200)
+        await loc.pressSequentially(rutCompleto, { delay: DELAY_RUT, timeout: T })
+        await page.waitForTimeout(500)
+        return (await loc.inputValue()).replace(/\D/g, '')
+      }
+
+      let digits = await teclearRut()
+      if (digits !== rutCompleto) {
+        digits = await teclearRut()
+        if (digits !== rutCompleto) {
+          throw new Error(`[RCV] RUT mal ingresado tras 2 intentos (dígitos obtenidos: "${digits}")`)
+        }
+      }
+
+      await page.locator('input[type="password"]:visible').first()
+        .pressSequentially(clave, { delay: 50, timeout: T })
+
+      try {
+        await Promise.all([
+          page.waitForNavigation({ waitUntil: 'networkidle', timeout: 25000 }),
+          page.locator('button:has-text("INGRESAR"), input[value="INGRESAR"], button:has-text("Ingresar")')
+            .first().click({ timeout: T }),
+        ])
+      } catch (e) { /* probable autosubmit — no es un error */ }
+
+      const urlPostLogin = page.url()
+      console.log('[RCV] URL post-login:', urlPostLogin)
+      if (urlPostLogin.includes('errorp') || urlPostLogin.includes('homer.sii.cl/errorp')) {
+        throw new Error('Login SII rechazado — verifica SII_CLAVE')
+      }
+
+      // ── Paso 4: capturar conversationId y consultar RCV ──
+      // El conversationId DEBE ser el que la propia SPA del SII genera en getDatosInicio.
+      // Un valor inventado es rechazado con "El token no es valido: NO Existen Datos".
+      console.log('[RCV] paso 4 — navegando a consdcvinternetui')
+      let sessionConversationId = null
+      page.on('request', req => {
+        if (req.url().includes('getDatosInicio') && !sessionConversationId) {
+          try {
+            const body = JSON.parse(req.postData())
+            sessionConversationId = body?.metaData?.conversationId || null
+          } catch (e) {}
+        }
+      })
+
+      await page.goto('https://www4.sii.cl/consdcvinternetui/#/index', {
+        waitUntil: 'networkidle',
+        timeout: T,
+      })
+
+      let waited = 0
+      while (!sessionConversationId && waited < 5000) {
+        await page.waitForTimeout(200)
+        waited += 200
+      }
+      if (!sessionConversationId) {
+        throw new Error('[RCV] no se pudo capturar conversationId de la SPA del SII')
+      }
+      console.log('[RCV] conversationId capturado')
+
+      // Espera 2s para que la SPA termine getDcvEmpresasAutorizadas antes de nuestras llamadas
+      await page.waitForTimeout(2000)
+
+      // Helper: llama un endpoint del facadeService desde el contexto del browser.
+      // credentials: 'include' envía las cookies de sesión automáticamente.
+      const facadeCall = (endpoint, data) => page.evaluate(
+        async ({ endpoint, conversationId, data }) => {
+          const res = await fetch(
+            `https://www4.sii.cl/consdcvinternetui/services/data/facadeService/${endpoint}`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
+              body: JSON.stringify({
+                metaData: {
+                  namespace: `cl.sii.sdi.lob.diii.consdcv.data.api.interfaces.FacadeService/${endpoint}`,
+                  conversationId,
+                  transactionId: crypto.randomUUID(),
+                  page: null,
+                },
+                data,
+              }),
+            }
+          )
+          return res.json()
+        },
+        { endpoint, conversationId: sessionConversationId, data }
+      )
+
+      const docs = []
+
+      if (operUp === 'COMPRA' || operUp === 'AMBOS') {
+        console.log('[RCV] consultando COMPRA — período:', periodo)
+        const resumenCompra = await facadeCall('getResumen', {
+          rutEmisor: rut, dvEmisor: dv, ptributario: periodo,
+          estadoContab: 'REGISTRO', operacion: 'COMPRA', busquedaInicial: true,
+        })
+        console.log('[RCV] getResumen COMPRA codRespuesta:', resumenCompra?.codRespuesta)
+
+        const tiposCompra = (resumenCompra?.data || [])
+          .filter(i => i.dcvTipoIngresoDoc === 'DET_ELE' || i.dcvTipoIngresoDoc === 'DET_PAP')
+          .map(i => i.rsmnTipoDocInteger)
+
+        for (const codTipoDoc of tiposCompra) {
+          const resp = await facadeCall('getDetalleCompra', {
+            rutEmisor: rut, dvEmisor: dv, ptributario: periodo,
+            codTipoDoc: String(codTipoDoc),
+            operacion: 'COMPRA', estadoContab: 'REGISTRO',
+            accionRecaptcha: 'RCV_DETC', tokenRecaptcha: 't-o-k-e-n-web',
+          })
+          console.log(`[RCV] getDetalleCompra tipo ${codTipoDoc}: ${resp?.data?.length ?? 0} docs`)
+          if (Array.isArray(resp?.data)) docs.push(...resp.data)
+        }
+      }
+
+      if (operUp === 'VENTA' || operUp === 'AMBOS') {
+        console.log('[RCV] consultando VENTA — período:', periodo)
+        const resumenVenta = await facadeCall('getResumen', {
+          rutEmisor: rut, dvEmisor: dv, ptributario: periodo,
+          estadoContab: 'REGISTRO', operacion: 'VENTA', busquedaInicial: true,
+        })
+        console.log('[RCV] getResumen VENTA codRespuesta:', resumenVenta?.codRespuesta)
+
+        const tiposVenta = (resumenVenta?.data || [])
+          .filter(i => i.dcvTipoIngresoDoc === 'DET_ELE' || i.dcvTipoIngresoDoc === 'DET_PAP')
+          .map(i => i.rsmnTipoDocInteger)
+
+        for (const codTipoDoc of tiposVenta) {
+          const resp = await facadeCall('getDetalleVenta', {
+            rutEmisor: rut, dvEmisor: dv, ptributario: periodo,
+            codTipoDoc: String(codTipoDoc),
+            operacion: '', estadoContab: '',
+            accionRecaptcha: 'RCV_DETV', tokenRecaptcha: 't-o-k-e-n-web',
+          })
+          console.log(`[RCV] getDetalleVenta tipo ${codTipoDoc}: ${resp?.data?.length ?? 0} docs`)
+          if (Array.isArray(resp?.data)) docs.push(...resp.data)
+        }
+      }
+
+      console.log('[RCV] total docs:', docs.length)
+      return docs
+    } finally {
+      await browser.close().catch(() => {})
+    }
   }
 
-  let jar = mergeCookies(new Map(), parseCookies(resp1.headers['set-cookie']))
-  console.log('[SII Login] paso 1 —', jar.size, 'cookies:', [...jar.keys()].join(', '))
-
-  // [DIAG] Mostrar el HTML completo del formulario del paso 1 para ver
-  // campos ocultos, action del form y valores dinámicos reales
-  const body1 = typeof resp1.data === 'string' ? resp1.data : JSON.stringify(resp1.data)
-  console.log('[SII Login DIAG] paso 1 — body completo (' + body1.length + ' chars):')
-  console.log(body1)
-
-  // ── Paso 2: POST de credenciales ──
-  const loginData = new URLSearchParams({
-    rut,
-    dv: '6',
-    clave,
-    referencia: 'https://www4.sii.cl/consdcvinternetui/#/index',
+  // Timeout global de 60s — cierra el browser si el flujo se queda colgado
+  let timeoutId
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      if (browser) browser.close().catch(() => {})
+      reject(new Error('consultarRCVPlaywright: timeout global (60s)'))
+    }, 60000)
   })
 
-  // [DIAG] Confirmar campos exactos que se envían en el POST
-  console.log('[SII Login DIAG] paso 2 — campos POST:', [...loginData.keys()].join(', '))
-  console.log('[SII Login DIAG] paso 2 — rut enviado:', rut, '| dv: 6 | referencia presente:', loginData.has('referencia'))
+  const runPromise = run()
+  runPromise.catch(() => {}) // evita unhandled rejection si el timeout gana primero
 
-  let resp2
   try {
-    resp2 = await axios.post(
-      'https://herculesr.sii.cl/cgi_AUT2000/autInicio.cgi',
-      loginData.toString(),
-      {
-        httpsAgent: siiAgent, // herculesr también tiene la incompatibilidad RSA-PSS de OpenSSL 3.x
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          'Referer': 'https://zeusr.sii.cl/AUT2000/InicioAutenticacion.html',
-          'Origin': 'https://zeusr.sii.cl',
-          'Cookie': jarToStr(jar),
-        },
-        maxRedirects: 0,      // [DIAG] sin seguir redirects — ver el 302 crudo si lo hay
-        validateStatus: (s) => s < 500,
-      }
-    )
-  } catch (err) {
-    console.error('[SII Login] FALLO paso 2 (herculesr POST):', err.code, err.message)
-    console.error('[SII Login] stack paso 2:', err.stack)
-    throw err
+    return await Promise.race([runPromise, timeoutPromise])
+  } finally {
+    clearTimeout(timeoutId)
   }
-
-  // [DIAG] Respuesta completa del paso 2
-  console.log('[SII Login DIAG] paso 2 — status:', resp2.status)
-  console.log('[SII Login DIAG] paso 2 — headers completos:', JSON.stringify(resp2.headers, null, 2))
-  console.log('[SII Login DIAG] paso 2 — location header:', resp2.headers['location'] || '(no existe)')
-  console.log('[SII Login DIAG] paso 2 — set-cookie raw:', JSON.stringify(resp2.headers['set-cookie'] || []))
-  const bodyStr = typeof resp2.data === 'string' ? resp2.data : JSON.stringify(resp2.data)
-  console.log('[SII Login DIAG] paso 2 — body (primeros 2000):', bodyStr.substring(0, 2000))
-  console.log('[SII Login DIAG] paso 2 — body contiene jsessionid:', bodyStr.toLowerCase().includes('jsessionid'))
-  console.log('[SII Login DIAG] paso 2 — body contiene "clave":', bodyStr.toLowerCase().includes('clave'))
-  console.log('[SII Login DIAG] paso 2 — body contiene "error":', bodyStr.toLowerCase().includes('error'))
-  console.log('[SII Login DIAG] paso 2 — body contiene "mi sii":', bodyStr.toLowerCase().includes('mi sii'))
-
-  jar = mergeCookies(jar, parseCookies(resp2.headers['set-cookie']))
-  console.log('[SII Login] paso 2 — status:', resp2.status, '—', jar.size, 'cookies:', [...jar.keys()].join(', '))
-
-  // ── Paso 3: navegar al portal RCV para obtener cookies de sesión de www4 ──
-  let resp3
-  try {
-    resp3 = await axios.get('https://www4.sii.cl/consdcvinternetui/', {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Cookie': jarToStr(jar),
-        'Referer': 'https://www.sii.cl/',
-      },
-      maxRedirects: 5,
-      validateStatus: (s) => s < 500,
-    })
-  } catch (err) {
-    console.error('[SII Login] FALLO paso 3 (www4 GET):', err.code, err.message)
-    console.error('[SII Login] stack paso 3:', err.stack)
-    throw err
-  }
-
-  jar = mergeCookies(jar, parseCookies(resp3.headers['set-cookie']))
-  const cookiesFinal = jarToStr(jar)
-  console.log('[SII Login] final —', jar.size, 'cookies:', [...jar.keys()].join(', '))
-  console.log('[SII Login] string guardado (primeros 300):', cookiesFinal.substring(0, 300))
-  return cookiesFinal
 }
 
-async function consultarRCV(rut, dv, periodo, tipo = 'COMPRA', empresaId = null) {
-  const tipoUp = tipo.toUpperCase()
-  console.log('[SII] consultarRCV iniciado - tipo:', tipoUp, 'periodo:', periodo)
-
-  let cookiesStr = null
-
-  // Leer cookies de sesión web desde sii_config (obtenidas con loginWebSII)
-  if (empresaId) {
-    const { data: cfg } = await supabase
-      .from('sii_config')
-      .select('sii_cookies')
-      .eq('empresa_id', empresaId)
-      .single()
-    cookiesStr = cfg?.sii_cookies || null
-    console.log('[SII] cookies desde sii_config:', cookiesStr ? 'OK (no vacías)' : 'no encontradas')
-  }
-
-  // Fallback: login directo con SII_CLAVE de env
-  if (!cookiesStr) {
-    const claveSII = process.env.SII_CLAVE
-    if (!claveSII) throw new Error('No hay cookies de sesión SII ni SII_CLAVE configurada')
-    console.log('[SII] sin cookies guardadas, haciendo login con SII_CLAVE')
-    cookiesStr = await loginWebSII(rut, claveSII)
-  }
-
-  // Seleccionar endpoint según tipo — NO usamos token SOAP aquí, solo cookies web
-  const endpoint  = tipoUp === 'VENTA' ? 'getDetalleVenta' : 'getDetalleCompra'
-  const url       = `https://www4.sii.cl/consdcvinternetui/services/data/facadeService/${endpoint}`
-  const namespace = `cl.sii.sdi.lob.diii.consdcv.data.api.interfaces.FacadeService/${endpoint}`
-
-  const body = {
-    metaData: {
-      namespace,
-      conversationId: crypto.randomUUID(),
-      transactionId:  crypto.randomUUID(),
-      page: null,
-    },
-    data: {
-      rutEmisor:    rut,
-      dvEmisor:     dv,
-      ptributario:  periodo,
-      estadoContab: 'REGISTRO',
-      codTipoDoc:   0,
-      operacion:    tipoUp,
-    },
-  }
-
-  console.log('[SII RCV] URL:', url)
-  console.log('[SII RCV] body:', JSON.stringify(body))
-  console.log('[SII RCV] cookiesStr presente:', !!cookiesStr)
-
-  // Sin siiAgent — www4.sii.cl usa TLS estándar; el agent solo aplica a palena.sii.cl (SOAP).
-  const axiosConfig = {
-    headers: {
-      'User-Agent':       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-      'Referer':          'https://www4.sii.cl/consdcvinternetui/',
-      'Origin':           'https://www4.sii.cl',
-      'Accept':           'application/json, text/plain, */*',
-      'Content-Type':     'application/json;charset=UTF-8',
-      'X-Requested-With': 'XMLHttpRequest',
-      'Cookie':           cookiesStr,
-    },
-    timeout: 30000,
-    validateStatus: () => true,
-  }
-
-  // Un reintento automático solo en errores de conexión (socket hang up / ECONNRESET)
-  let response
-  try {
-    response = await axios.post(url, body, axiosConfig)
-  } catch (err) {
-    const esConexion = err.code === 'ECONNRESET' || String(err.message).includes('socket hang up')
-    if (!esConexion) throw err
-    console.log('[SII RCV] socket hang up — reintentando una vez...')
-    response = await axios.post(url, body, axiosConfig)
-  }
-
-  console.log('[SII RCV] status:', response.status)
-  console.log('[SII RCV] response.data (primeros 1000):', JSON.stringify(response.data).substring(0, 1000))
-
-  if (response.status >= 400) {
-    throw new Error(`SII respondió con status ${response.status} para ${endpoint}: ${JSON.stringify(response.data).substring(0, 300)}`)
-  }
-
-  return response.data
-}
-
-module.exports = { obtenerToken, consultarRCV, obtenerSemilla, loginWebSII }
+module.exports = { obtenerToken, consultarRCVPlaywright, obtenerSemilla }
