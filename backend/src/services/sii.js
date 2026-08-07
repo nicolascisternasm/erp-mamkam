@@ -191,6 +191,12 @@ async function loginWebSII(rut, clave) {
   let jar = mergeCookies(new Map(), parseCookies(resp1.headers['set-cookie']))
   console.log('[SII Login] paso 1 —', jar.size, 'cookies:', [...jar.keys()].join(', '))
 
+  // [DIAG] Mostrar el HTML completo del formulario del paso 1 para ver
+  // campos ocultos, action del form y valores dinámicos reales
+  const body1 = typeof resp1.data === 'string' ? resp1.data : JSON.stringify(resp1.data)
+  console.log('[SII Login DIAG] paso 1 — body completo (' + body1.length + ' chars):')
+  console.log(body1)
+
   // ── Paso 2: POST de credenciales ──
   const loginData = new URLSearchParams({
     rut,
