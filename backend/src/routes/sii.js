@@ -1,6 +1,6 @@
 const { Router } = require('express')
 const { requireAuth } = require('../middleware/auth')
-const { obtenerToken, consultarRCVPlaywright } = require('../services/sii')
+const { obtenerToken, consultarRCVPlaywright, guardarDocumentosRCV } = require('../services/sii')
 const supabase = require('../lib/supabase')
 
 const router = Router()
@@ -71,6 +71,13 @@ router.get('/rcv', requireAuth, async (req, res) => {
     }
 
     const docs = await consultarRCVPlaywright(rut, dv, config.clave_sii, periodo, tipo)
+
+    const tipoNorm = tipo.toLowerCase()
+    if (tipoNorm === 'compra' || tipoNorm === 'venta') {
+      const { guardados } = await guardarDocumentosRCV(docs, tipoNorm, req.user.empresa_id)
+      console.log(`[SII] RCV guardados en BD: ${guardados} docs (${tipoNorm} · ${periodo})`)
+    }
+
     res.json({ data: docs })
   } catch (err) {
     console.error('[SII] Error RCV:', err.message)

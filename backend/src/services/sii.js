@@ -372,4 +372,58 @@ async function consultarRCVPlaywright(rut, dv, clave, periodo, operacion) {
   }
 }
 
-module.exports = { obtenerToken, consultarRCVPlaywright, obtenerSemilla }
+function newUUID() {
+  const b = crypto.randomBytes(16)
+  b[6] = (b[6] & 0x0f) | 0x40
+  b[8] = (b[8] & 0x3f) | 0x80
+  const h = b.toString('hex')
+  return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`
+}
+
+const parseFecha = s => {
+  if (!s) return null
+  const [d, m, y] = s.split('/')
+  return `${y}-${m}-${d}`
+}
+
+const parseFechaHora = s => {
+  if (!s?.trim()) return null
+  const [fecha, hora] = s.trim().split(' ')
+  const [d, m, y] = fecha.split('/')
+  return `${y}-${m}-${d}T${hora}`
+}
+
+async function guardarDocumentosRCV(documentos, tipo, empresaId) {
+  if (!Array.isArray(documentos) || !documentos.length) return { guardados: 0 }
+
+  const rows = documentos.map(doc => ({
+    id:                  newUUID(),
+    empresa_id:          empresaId,
+    tipo:                tipo,
+    tipo_doc:            String(doc.detTipoDoc),
+    tipo_compra_venta:   '',
+    folio:               String(doc.detNroDoc ?? ''),
+    numero_interno:      '',
+    rut_contraparte:     `${doc.detRutDoc}-${doc.detDvDoc}`,
+    razon_social:        doc.detRznSoc ?? '',
+    fecha:               parseFecha(doc.detFchDoc),
+    fecha_recepcion:     parseFechaHora(doc.detFecRecepcion),
+    monto_exento:        doc.detMntExe ?? 0,
+    neto:                doc.detMntNeto ?? 0,
+    iva:                 doc.detMntIVA ?? 0,
+    iva_no_recuperable:  doc.detMntIVANoRec ?? 0,
+    total:               doc.detMntTotal ?? 0,
+    estado:              'vigente',
+    sii_detalle_codigo:  doc.detCodigo ?? null,
+  }))
+
+  const { data, error } = await supabase
+    .from('facturas_sii')
+    .upsert(rows, { onConflict: 'sii_detalle_codigo', ignoreDuplicates: false })
+    .select('id')
+
+  if (error) throw error
+  return { guardados: data?.length ?? 0 }
+}
+
+module.exports = { obtenerToken, consultarRCVPlaywright, guardarDocumentosRCV, obtenerSemilla }
