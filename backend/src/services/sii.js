@@ -158,6 +158,12 @@ async function consultarRCVPlaywright(rut, dv, clave, periodo, operacion) {
   const { chromium } = require('playwright')
   const operUp = (operacion || 'AMBOS').toUpperCase()
 
+  const memMB = () => {
+    const m = process.memoryUsage()
+    return `rss=${Math.round(m.rss/1e6)}MB heap=${Math.round(m.heapUsed/1e6)}/${Math.round(m.heapTotal/1e6)}MB`
+  }
+  console.log(`[RCV] inicio consultarRCVPlaywright — memoria: ${memMB()}`)
+
   let browser
   const T          = 20000 // timeout por operación de UI (ms)
   const DELAY_RUT  = 200   // ms entre teclas del RUT para el reformateo JS
@@ -347,10 +353,11 @@ async function consultarRCVPlaywright(rut, dv, clave, periodo, operacion) {
         }
       }
 
-      console.log('[RCV] total docs:', docs.length)
+      console.log(`[RCV] total docs: ${docs.length} — memoria antes de cerrar: ${memMB()}`)
       return docs
     } finally {
       await browser.close().catch(() => {})
+      console.log(`[RCV] browser cerrado — memoria final: ${memMB()}`)
     }
   }
 
