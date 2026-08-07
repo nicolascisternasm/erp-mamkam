@@ -178,14 +178,14 @@ async function consultarRCVPlaywright(rut, dv, clave, periodo, operacion) {
 
       // ── Paso 1: www.sii.cl ──
       console.log('[RCV] paso 1 — www.sii.cl')
-      await page.goto('https://www.sii.cl', { waitUntil: 'networkidle', timeout: T })
+      await page.goto('https://www.sii.cl', { waitUntil: 'domcontentloaded', timeout: 30000 })
 
       // ── Paso 2: misiir.sii.cl → redirige al formulario de login ──
       console.log('[RCV] paso 2 — misiir.sii.cl')
       await page.goto('https://misiir.sii.cl/cgi_misii/siihome.cgi', {
         referer: 'https://www.sii.cl',
-        waitUntil: 'networkidle',
-        timeout: T,
+        waitUntil: 'domcontentloaded',
+        timeout: 30000,
       })
 
       if (!page.url().includes('InicioAutenticacion') && !page.url().includes('zeusr')) {
@@ -194,12 +194,13 @@ async function consultarRCVPlaywright(rut, dv, clave, periodo, operacion) {
           a => a.href
         ).catch(() => null)
         if (hrefLogin) {
-          await page.goto(hrefLogin, { referer: page.url(), waitUntil: 'networkidle', timeout: T })
+          await page.goto(hrefLogin, { referer: page.url(), waitUntil: 'domcontentloaded', timeout: 30000 })
         }
       }
 
       // ── Paso 3: completar formulario de login ──
       console.log('[RCV] paso 3 — login')
+      await page.waitForSelector('#rutcntr', { timeout: 30000 })
       const rutCompleto = `${rut}${dv}`
 
       const teclearRut = async () => {
@@ -226,7 +227,7 @@ async function consultarRCVPlaywright(rut, dv, clave, periodo, operacion) {
 
       try {
         await Promise.all([
-          page.waitForNavigation({ waitUntil: 'networkidle', timeout: 25000 }),
+          page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 30000 }),
           page.locator('button:has-text("INGRESAR"), input[value="INGRESAR"], button:has-text("Ingresar")')
             .first().click({ timeout: T }),
         ])
@@ -253,8 +254,8 @@ async function consultarRCVPlaywright(rut, dv, clave, periodo, operacion) {
       })
 
       await page.goto('https://www4.sii.cl/consdcvinternetui/#/index', {
-        waitUntil: 'networkidle',
-        timeout: T,
+        waitUntil: 'domcontentloaded',
+        timeout: 30000,
       })
 
       let waited = 0
