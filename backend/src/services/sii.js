@@ -416,6 +416,7 @@ async function guardarDocumentosRCV(documentos, tipo, empresaId) {
     total:               doc.detMntTotal ?? 0,
     estado:              'vigente',
     sii_detalle_codigo:  doc.detCodigo ?? null,
+    periodo:             String(doc.detPcarga ?? ''),
   }))
 
   const { data, error } = await supabase

@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { useApp } from '../../context/AppContext'
 import { apiClient } from '../../services/apiClient'
 import { formatCLP, formatDate } from '../../utils/formatters'
@@ -7,7 +7,7 @@ import { ConfirmModal } from '../../components/Modal'
 import {
   Upload, Plus, Search, Trash2, Pencil, FileText,
   TrendingDown, TrendingUp, Receipt, X, AlertCircle, CheckCircle2,
-  RefreshCw,
+  RefreshCw, Wallet,
 } from 'lucide-react'
 
 /* ── Tipos de documento SII ──────────────────────────────────────── */
@@ -381,6 +381,13 @@ export default function FacturasSIIPage() {
   const [toast,        setToast]        = useState(null)
   const [importing,    setImporting]    = useState(false)
   const [rcvLoading,   setRcvLoading]   = useState(false)
+  const [remanente,    setRemanente]    = useState(null)
+
+  useEffect(() => {
+    apiClient.get('facturas/remanente-iva')
+      .then(data => setRemanente(data))
+      .catch(() => {})
+  }, [])
 
   const POR_PAGINA    = 10
   const MAX_REGISTROS = 50
@@ -544,6 +551,29 @@ export default function FacturasSIIPage() {
           </div>
         ))}
       </div>
+
+      {/* Remanente de IVA Acumulado */}
+      {remanente && (
+        <div className="card p-4">
+          <div className="flex items-center gap-3">
+            <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
+              remanente.periodosFaltantes?.length ? 'text-amber-600 bg-amber-100' : 'text-emerald-600 bg-emerald-100'
+            }`}>
+              <Wallet className="w-4 h-4" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-slate-500">Remanente de IVA Acumulado</p>
+              {remanente.periodosFaltantes?.length ? (
+                <p className="text-sm text-amber-700">
+                  Faltan sincronizar: {remanente.periodosFaltantes.join(', ')} — el remanente no se puede calcular con exactitud hasta completarlos
+                </p>
+              ) : (
+                <p className="text-base font-bold text-slate-800">{formatCLP(remanente.remanenteActual)}</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Tabs + Filtros */}
       <div className="card">

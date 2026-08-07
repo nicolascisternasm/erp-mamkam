@@ -119,6 +119,75 @@ router.get('/resumen', async (req, res) => {
   }
 })
 
+/* ── GET /api/facturas/remanente-iva ───────────────────────────────── */
+router.get('/remanente-iva', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('facturas_sii')
+      .select('periodo, tipo, iva')
+      .eq('empresa_id', req.user.empresa_id)
+      .not('periodo', 'is', null)
+      .neq('periodo', '')
+    if (error) throw error
+
+    const mapa = {}
+    for (const r of data || []) {
+      if (!r.periodo) continue
+      if (!mapa[r.periodo]) mapa[r.periodo] = { debito: 0, credito: 0 }
+      if (r.tipo === 'venta')  mapa[r.periodo].debito  += r.iva ?? 0
+      if (r.tipo === 'compra') mapa[r.periodo].credito += r.iva ?? 0
+    }
+
+    const periodos = Object.keys(mapa).sort()
+    if (!periodos.length) {
+      return res.json({ success: true, data: { detallePorMes: [], remanenteActual: 0, periodosFaltantes: [] } })
+    }
+
+    const siguientePeriodo = p => {
+      const anio = parseInt(p.slice(0, 4), 10)
+      const mes  = parseInt(p.slice(4, 6), 10)
+      return mes === 12
+        ? `${anio + 1}01`
+        : `${anio}${String(mes + 1).padStart(2, '0')}`
+    }
+
+    const primero = periodos[0]
+    const ultimo  = periodos[periodos.length - 1]
+    const periodosFaltantes = []
+    let p = siguientePeriodo(primero)
+    while (p < ultimo) {
+      if (!mapa[p]) periodosFaltantes.push(p)
+      p = siguientePeriodo(p)
+    }
+
+    if (periodosFaltantes.length) {
+      return res.json({ success: true, data: { detallePorMes: [], remanenteActual: 0, periodosFaltantes } })
+    }
+
+    let remanenteAcumulado = 0
+    const detallePorMes = periodos.map(per => {
+      const { debito, credito } = mapa[per]
+      const resultado = remanenteAcumulado + credito - debito
+      let pagoDelMes, remanenteFinal
+      if (resultado >= 0) {
+        remanenteAcumulado = resultado
+        pagoDelMes    = 0
+        remanenteFinal = resultado
+      } else {
+        pagoDelMes    = Math.abs(resultado)
+        remanenteAcumulado = 0
+        remanenteFinal = 0
+      }
+      return { periodo: per, ivaDebito: debito, ivaCredito: credito, pagoDelMes, remanenteFinal }
+    })
+
+    res.json({ success: true, data: { detallePorMes, remanenteActual: remanenteAcumulado, periodosFaltantes: [] } })
+  } catch (err) {
+    console.error('[facturas GET remanente-iva]', err)
+    res.status(500).json({ success: false, error: { code: 'DB_ERROR', message: err.message } })
+  }
+})
+
 /* ── POST /api/facturas ────────────────────────────────────────────── */
 router.post('/', async (req, res) => {
   try {
