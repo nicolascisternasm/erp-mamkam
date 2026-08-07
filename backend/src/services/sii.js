@@ -239,10 +239,26 @@ async function consultarRCVPlaywright(rut, dv, clave, periodo, operacion) {
         ])
       } catch (e) { /* probable autosubmit — no es un error */ }
 
+      // waitForNavigation puede resolver en el primer 302 (zeusr.sii.cl) antes de que
+      // ocurra la redirección final a misiir.sii.cl. Esperamos a salir del dominio de login.
+      if (page.url().includes('zeusr.sii.cl/cgi_AUT2000')) {
+        console.log('[RCV] post-login: todavía en login, esperando redirección final...')
+        try {
+          await page.waitForURL(
+            url => !url.href.includes('zeusr.sii.cl/cgi_AUT2000'),
+            { timeout: 15000 }
+          )
+        } catch { /* si no redirige en 15s lo detecta el chequeo de abajo */ }
+      }
+
+      console.log('[RCV] URL antes de avanzar al paso 4:', page.url())
       const urlPostLogin = page.url()
       console.log('[RCV] URL post-login:', urlPostLogin)
       if (urlPostLogin.includes('errorp') || urlPostLogin.includes('homer.sii.cl/errorp')) {
         throw new Error('Login SII rechazado — verifica SII_CLAVE')
+      }
+      if (urlPostLogin.includes('zeusr.sii.cl/cgi_AUT2000')) {
+        throw new Error('Login SII incompleto — redirección post-submit no ocurrió a tiempo')
       }
 
       // ── Paso 4: capturar conversationId y consultar RCV ──
