@@ -258,6 +258,7 @@ async function consultarRCVPlaywright(rut, dv, clave, periodo, operacion) {
         throw new Error('Login SII rechazado — verifica SII_CLAVE')
       }
       if (urlPostLogin.includes('zeusr.sii.cl/cgi_AUT2000')) {
+        console.log('[RCV] Body de la página atascada (primeros 1500 chars):', (await page.content()).substring(0, 1500))
         throw new Error('Login SII incompleto — redirección post-submit no ocurrió a tiempo')
       }
 
