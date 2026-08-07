@@ -155,6 +155,22 @@ async function obtenerToken() {
 }
 
 async function loginWebSII(rut, clave) {
+  // Extrae "nombre=valor" de cada entrada del array Set-Cookie,
+  // descartando atributos (Path=, Domain=, Expires=, HttpOnly, Secure…).
+  const parseCookies = (setCookieArr) =>
+    (setCookieArr || []).map((c) => c.split(';')[0].trim()).filter(Boolean)
+
+  // Fusiona un jar existente (Map nombre→"nombre=valor") con cookies nuevas.
+  // Si el mismo nombre aparece en varios pasos, gana el valor más reciente.
+  const mergeCookies = (jar, newOnes) => {
+    const map = new Map(jar)
+    newOnes.forEach((c) => map.set(c.split('=')[0], c))
+    return map
+  }
+
+  const jarToStr = (jar) => [...jar.values()].join('; ')
+
+  // ── Paso 1: página inicial (recoge cookies WAF/sesión de zeusr) ──
   const resp1 = await axios.get('https://zeusr.sii.cl/AUT2000/InicioAutenticacion.html', {
     httpsAgent: siiAgent,
     headers: {
@@ -164,9 +180,10 @@ async function loginWebSII(rut, clave) {
     maxRedirects: 5,
   })
 
-  const cookies1 = (resp1.headers['set-cookie'] || []).join('; ')
-  console.log('[SII Login] cookies iniciales:', cookies1.substring(0, 100))
+  let jar = mergeCookies(new Map(), parseCookies(resp1.headers['set-cookie']))
+  console.log('[SII Login] paso 1 —', jar.size, 'cookies:', [...jar.keys()].join(', '))
 
+  // ── Paso 2: POST de credenciales ──
   const loginData = new URLSearchParams({
     rut,
     dv: '6',
@@ -184,30 +201,32 @@ async function loginWebSII(rut, clave) {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         'Referer': 'https://zeusr.sii.cl/AUT2000/InicioAutenticacion.html',
         'Origin': 'https://zeusr.sii.cl',
-        'Cookie': cookies1,
+        'Cookie': jarToStr(jar),
       },
       maxRedirects: 5,
-      validateStatus: s => s < 500,
+      validateStatus: (s) => s < 500,
     }
   )
 
-  const cookies2 = [cookies1, ...(resp2.headers['set-cookie'] || [])].join('; ')
-  console.log('[SII Login] status login:', resp2.status)
-  console.log('[SII Login] cookies tras login:', cookies2.substring(0, 200))
+  jar = mergeCookies(jar, parseCookies(resp2.headers['set-cookie']))
+  console.log('[SII Login] paso 2 — status:', resp2.status, '—', jar.size, 'cookies:', [...jar.keys()].join(', '))
 
+  // ── Paso 3: navegar al portal RCV para obtener cookies de sesión de www4 ──
   const resp3 = await axios.get('https://www4.sii.cl/consdcvinternetui/', {
     httpsAgent: siiAgent,
     headers: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      'Cookie': cookies2,
+      'Cookie': jarToStr(jar),
       'Referer': 'https://www.sii.cl/',
     },
     maxRedirects: 5,
-    validateStatus: s => s < 500,
+    validateStatus: (s) => s < 500,
   })
 
-  const cookiesFinal = [cookies2, ...(resp3.headers['set-cookie'] || [])].join('; ')
-  console.log('[SII Login] cookies finales:', cookiesFinal.substring(0, 300))
+  jar = mergeCookies(jar, parseCookies(resp3.headers['set-cookie']))
+  const cookiesFinal = jarToStr(jar)
+  console.log('[SII Login] final —', jar.size, 'cookies:', [...jar.keys()].join(', '))
+  console.log('[SII Login] string guardado (primeros 300):', cookiesFinal.substring(0, 300))
   return cookiesFinal
 }
 
