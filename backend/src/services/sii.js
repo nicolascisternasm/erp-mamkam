@@ -245,17 +245,30 @@ async function consultarRCV(rut, dv, periodo, tipo = 'COMPRA', empresaId = null)
   console.log('[SII RCV] body:', JSON.stringify(body))
   console.log('[SII RCV] cookiesStr presente:', !!cookiesStr)
 
-  const response = await axios.post(url, body, {
+  const axiosConfig = {
     headers: {
-      'Content-Type': 'application/json',
-      'Accept':       'application/json, text/plain, */*',
-      'Origin':       'https://www4.sii.cl',
-      'Referer':      'https://www4.sii.cl/consdcvinternetui/',
-      'User-Agent':   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      'Cookie':       cookiesStr,
+      'User-Agent':       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+      'Referer':          'https://www4.sii.cl/consdcvinternetui/',
+      'Origin':           'https://www4.sii.cl',
+      'Accept':           'application/json, text/plain, */*',
+      'Content-Type':     'application/json;charset=UTF-8',
+      'X-Requested-With': 'XMLHttpRequest',
+      'Cookie':           cookiesStr,
     },
+    timeout: 30000,
     validateStatus: () => true,
-  })
+  }
+
+  // Un reintento automático solo en errores de conexión (socket hang up / ECONNRESET)
+  let response
+  try {
+    response = await axios.post(url, body, axiosConfig)
+  } catch (err) {
+    const esConexion = err.code === 'ECONNRESET' || String(err.message).includes('socket hang up')
+    if (!esConexion) throw err
+    console.log('[SII RCV] socket hang up — reintentando una vez...')
+    response = await axios.post(url, body, axiosConfig)
+  }
 
   console.log('[SII RCV] status:', response.status)
   console.log('[SII RCV] response.data (primeros 1000):', JSON.stringify(response.data).substring(0, 1000))
