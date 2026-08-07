@@ -1,8 +1,20 @@
 const forge = require('node-forge')
 const axios = require('axios')
+const https = require('https')
 const { SignedXml } = require('xml-crypto')
 const crypto = require('crypto')
 const supabase = require('../lib/supabase')
+
+// Agent TLS dedicado para *.sii.cl — resuelve incompatibilidad RSA-PSS en
+// servidores gubernamentales antiguos con OpenSSL 3.x (Node 18+).
+// SSL_OP_LEGACY_SERVER_CONNECT permite negociar con padding no estándar.
+// rejectUnauthorized sigue en true — no desactivamos validación de certificado.
+const siiAgent = new https.Agent({
+  secureOptions: crypto.constants.SSL_OP_LEGACY_SERVER_CONNECT,
+  minVersion: 'TLSv1.2',
+  maxVersion: 'TLSv1.3',
+  rejectUnauthorized: true,
+})
 
 const SII_AMBIENTE = 'https://palena.sii.cl' // producción
 // const SII_AMBIENTE = 'https://maullin.sii.cl' // certificación
@@ -17,6 +29,7 @@ async function obtenerSemilla() {
 </soapenv:Envelope>`
 
   const response = await axios.post(url, soapEnvelope, {
+    httpsAgent: siiAgent,
     headers: {
       'Content-Type': 'text/xml; charset=utf-8',
       'SOAPAction': '',
@@ -112,6 +125,7 @@ async function obtenerToken() {
 </soapenv:Envelope>`
 
   const response = await axios.post(url, soapEnvelope, {
+    httpsAgent: siiAgent,
     headers: {
       'Content-Type': 'text/xml; charset=utf-8',
       'SOAPAction': '',
@@ -142,6 +156,7 @@ async function obtenerToken() {
 
 async function loginWebSII(rut, clave) {
   const resp1 = await axios.get('https://zeusr.sii.cl/AUT2000/InicioAutenticacion.html', {
+    httpsAgent: siiAgent,
     headers: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
       'Accept': 'text/html,application/xhtml+xml',
@@ -163,6 +178,7 @@ async function loginWebSII(rut, clave) {
     'https://herculesr.sii.cl/cgi_AUT2000/autInicio.cgi',
     loginData.toString(),
     {
+      httpsAgent: siiAgent,
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
@@ -180,6 +196,7 @@ async function loginWebSII(rut, clave) {
   console.log('[SII Login] cookies tras login:', cookies2.substring(0, 200))
 
   const resp3 = await axios.get('https://www4.sii.cl/consdcvinternetui/', {
+    httpsAgent: siiAgent,
     headers: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
       'Cookie': cookies2,
@@ -246,6 +263,7 @@ async function consultarRCV(rut, dv, periodo, tipo = 'COMPRA', empresaId = null)
   console.log('[SII RCV] cookiesStr presente:', !!cookiesStr)
 
   const axiosConfig = {
+    httpsAgent: siiAgent,
     headers: {
       'User-Agent':       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
       'Referer':          'https://www4.sii.cl/consdcvinternetui/',
