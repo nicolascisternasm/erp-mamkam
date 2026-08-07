@@ -1,6 +1,6 @@
 # DOCUMENTO MAESTRO — ERP MAMKAM
-**Versión:** 1.8.0  
-**Fecha:** 2026-07-29  
+**Versión:** 1.9.0  
+**Fecha:** 2026-08-07  
 **Estado:** Documento Vivo — sujeto a revisiones controladas  
 **Clasificación:** Interno / Confidencial
 
@@ -91,19 +91,20 @@ ERP MAMKAM
 | Módulo | Estado | Descripción |
 |--------|--------|-------------|
 | **Autenticación** | ✅ Operativo | Login JWT, roles admin/vendedor, rutas protegidas |
-| **COT — Cotizaciones** | ✅ Operativo | CRUD completo, envío WA/email, PDF, estados, items |
-| **VIS — Visitas** | ⚠️ Parcial | Modal overlay desde cotización aprobada, checklist desde Supabase, pendiente RLS |
-| **OC — Órdenes de Compra** | ✅ Operativo | CRUD básico, items, solo rol admin |
+| **COT — Cotizaciones** | ✅ Operativo | CRUD completo, envío WA/email, PDF, estados ampliados (incluye `en_ejecucion`, `ejecutada`), email de término de proyecto |
+| **VIS — Visitas** | ✅ Operativo | Modal + App móvil, checklist dinámico desde Supabase, fotos/videos/documentos en Storage, estados unificados |
+| **OC — Órdenes de Compra** | ✅ Operativo | CRUD básico, items, selector cotizaciones incluye `aprobada` y `en_ejecucion` |
 | **TRB — Trabajadores** | ✅ Operativo | CRUD completo, datos personales y laborales |
 | **RRHH** | ✅ Operativo | Documentos empresa/trabajador, gestión de tipos, amonestaciones con IA |
-| **CRM** | ✅ Operativo | Tabla clientes, lista con filtros, webhook Meta Lead Ads verificado, leads automáticos desde Facebook Lead Ads con datos adicionales |
-| **Backend Railway** | ✅ Operativo | Backend migrado de cPanel a Railway, deploy automático desde GitHub |
+| **CRM** | ✅ Operativo | Lista + Kanban (drag-and-drop @dnd-kit), etiquetas con color, recordatorio visual, link WhatsApp, webhook Meta Lead Ads |
+| **PROJ — Proyectos** | ✅ Operativo | Estado espejo de cotizaciones asociadas, archivado automático al cerrar, N:M con cotizaciones |
+| **Backend Railway** | ✅ Operativo | Backend en Railway, deploy automático desde GitHub, Playwright/Chromium instalado en build |
 | **FIN — Finanzas** | ⚠️ Parcial | Movimientos, conciliación manual, importación CSV, gastos con foto |
+| **FIN.SII** | ✅ Operativo | RCV sincronizado vía Playwright (login real + facadeService), guardado en `facturas_sii`, clave en BD |
 | **Usuarios** | ⚠️ Parcial | Página existente, gestión básica |
-| **Configuración** | ⚠️ Parcial | Página existente, ajustes generales, tab Visitas (admin) para gestionar checklist |
+| **Configuración** | ⚠️ Parcial | Página existente, ajustes generales, tab Visitas (admin), tab Integraciones (Meta + SII) |
 | **IAD — IA Documental** | 🔲 Planificado | Solo en especificación técnica |
 | **CONT — Contabilidad** | 🔲 Planificado | Solo en especificación técnica |
-| **FIN.SII** | 🔲 Planificado | Integración SII en especificación técnica |
 | **FIN.CAJ** | 🔲 Planificado | Caja chica en especificación técnica |
 | **FIN.ADL** | 🔲 Planificado | Adelantos trabajadores en especificación técnica |
 
@@ -117,7 +118,8 @@ ERP MAMKAM
 | **Webhook** | `erp-mamkam-production.up.railway.app` | Endpoint público de Meta Lead Ads |
 | **Base de datos** | Supabase (PostgreSQL cloud) | Vía `@supabase/supabase-js` |
 | **Autenticación** | JWT (`jsonwebtoken`) + bcryptjs | Token de 7 días, sin refresh |
-| **Email** | EmailJS (desde el frontend) | Sin Nodemailer en backend |
+| **Email** | EmailJS (frontend) + Nodemailer (backend, para email de término de proyecto) | Nodemailer usado en POST /cotizaciones/:id/enviar-email-ejecucion |
+| **Browser automation** | Playwright + Chromium headless | Integración SII RCV — instalado en build de Railway vía buildCommand |
 | **Roles** | `admin` y `vendedor` | RBAC simple en middleware |
 | **Estado frontend** | React Context (`AppContext`) | Sin React Query ni Zustand |
 
@@ -126,7 +128,7 @@ ERP MAMKAM
 #### Cotizaciones (COT) ✅
 - Creación con items (producto, cantidad, valor unitario, descripción)
 - Numeración automática (COT-YYYY-NNNN)
-- Estados: `borrador` → `enviada` → `aprobada` / `rechazada` / `en_ejecucion` / `cerrada`
+- Estados: `borrador` → `enviada` → `visita` → `aprobada` → `en_ejecucion` → `ejecutada` → `cerrada` (más `rechazada`/`perdida` como finales negativos)
 - Envío por **WhatsApp** (link público con datos en URL en base64, sin BD)
 - Envío por **email** vía EmailJS
 - Página pública `/ver?d=...` para que el cliente vea su cotización
@@ -134,23 +136,26 @@ ERP MAMKAM
 - Al aprobar cotización → crea movimiento de ingreso en Finanzas automáticamente
 - Al eliminar cotización aprobada → elimina movimiento de finanzas asociado
 - **Botón flotante "Visita"** visible cuando estado es `aprobada`, `en_ejecucion` o `cerrada` → abre ModalVisita
+- Al cambiar a `ejecutada` → abre **ModalEnviarEjecucion**: email de término de proyecto al cliente con fotos (visita_fotos), comprobantes de pago (pagos_comprobantes), saldo pendiente por condición, copia automática a contacto@mamkam.cl
+- Columnas nuevas: `email_ejecucion_enviado` (bool), `email_ejecucion_fecha` (timestamptz), `email_ejecucion_mensaje` (text)
+- Endpoint: `POST /cotizaciones/:id/enviar-email-ejecucion` — recalcula saldo en servidor, adjunta fotos/comprobantes vía Nodemailer
+- Al cambiar estado hacia `aprobada`, `en_ejecucion`, `ejecutada`, `cerrada`, `rechazada`, `perdida` → dispara `sincronizarEstadoProyecto(cotizacionId)` para mantener estado del proyecto espejo
 
-#### Visitas (VIS) ⚠️ Parcial
-- **ModalVisita.jsx**: modal overlay (max-w-4xl, max-h-[90vh], fondo con blur) accesible desde `CotizacionDetalle.jsx`
+#### Visitas (VIS) ✅
+- **ModalVisita.jsx** (ERP) y **App Mamkam Conecta** (Expo): ambas interfaces comparten las mismas tablas Supabase
 - 4 tabs: **Datos** | **Checklist** | **Fotos** | **Resumen IA**
-- **Tab Datos**: formulario de creación de visita (fecha, responsable, instalador, productos, notas); inserta en tabla `visitas`
-- **Tab Checklist**: preguntas cargadas desde Supabase (`visita_preguntas`), filtradas por empresa y productos; respuestas guardadas con UPSERT debounced (600ms) en `visita_checklist`; selector inline de productos si la visita no tiene productos asignados
-- Navegación footer adaptativa por tab (Cancelar/Crear, Siguiente, ←/→, ←/Cerrar)
-- Tras crear visita, navega automáticamente al tab Checklist
-- **visitaChecklists.js**: archivo JS con preguntas hardcodeadas (usado como referencia; la fuente oficial es ahora Supabase)
-- **Tab Configuración → Visitas** (solo admin): gestión de preguntas del checklist agrupadas por producto, con CRUD inline, toggle crítica y soft delete (`activo = false`)
-- **seed SQL**: `backend/scripts/seed-visita-preguntas.sql` con 41 preguntas (2 general + 12 toldo_vela + 13 caucho_continuo + 14 pasto_sintetico)
-- **Pendiente**: fix RLS en tabla `visita_preguntas` (ver sección 8.3.2)
+- **Tab Datos**: formulario de creación de visita; inserta en tabla `visitas`
+- **Tab Checklist**: preguntas cargadas desde `visita_preguntas` (Supabase), NO hardcodeadas; respuestas guardadas con UPSERT debounced (600ms) en `visita_checklist`
+- **Tab Fotos**: adjuntos guardados en tabla `visita_fotos` con tipo `'foto'` | `'video'` | `'documento'`; Storage buckets: `visitas-fotos`, `visitas-audios` (también guarda video), `visitas-documentos`
+- **Estados unificados** (migración aplicada): solo `'planificada'` y `'ejecutada'` — eliminados vocabularios previos (`agendada`, `en_curso`, `realizada`, `completada`, `programada`, `resumida`)
+- **Tab Configuración → Visitas** (solo admin): CRUD de preguntas del checklist por producto, toggle crítica, soft delete
+- **seed SQL**: `backend/scripts/seed-visita-preguntas.sql` con 41 preguntas
 
 #### Órdenes de Compra (OC) ✅
 - CRUD básico (solo rol admin)
 - Items por OC
 - Al pagar OC → crea movimiento de egreso en Finanzas
+- Selector de cotización para asociar a OC incluye estados `'aprobada'` y `'en_ejecucion'` (antes solo `'aprobada'`)
 
 #### Trabajadores (TRB) ✅
 - Campos: nombre, RUT, teléfono, cargo, sueldo, fecha_ingreso, estado
@@ -179,11 +184,28 @@ ERP MAMKAM
   * Código correlativo: `AMONEST-2026-001`
   * Tabla `amonestaciones` en Supabase
 
-#### CRM ⚠️ (en desarrollo)
-- Tabla `clientes` en Supabase
-- Frontend: lista con filtros por estado, badges de color
-- Webhook Meta Lead Ads: `/api/crm/webhook` (pendiente verificación)
-- Variables requeridas: `META_VERIFY_TOKEN`, `META_PAGE_ACCESS_TOKEN`, `META_EMPRESA_ID`
+#### CRM ✅
+- Tabla `clientes` en Supabase; webhook Meta Lead Ads verificado y operativo
+- **Vista Lista** con filtros por estado y búsqueda
+- **Vista Kanban** (alternable): drag-and-drop con `@dnd-kit/core` entre 5 columnas de estado (`nuevo`, `contactado`, `en_proceso`, `cerrado`, `perdido`)
+- **Etiquetas con color**: tablas `crm_etiquetas` (id, empresa_id, nombre, color) y `cliente_etiquetas` (N:M); CRUD completo vía `/api/crm/etiquetas` y `/api/crm/clientes/:id/etiquetas`
+- **Campo `fecha_recordatorio`** (date): badge visual — rojo si venció, amarillo si vence en ≤2 días, verde si es más lejano, sin badge si no tiene fecha
+- **Link WhatsApp** directo (`wa.me`) desde el teléfono del lead en todas las vistas
+
+#### Proyectos (PROJ) ✅
+- Estado del proyecto es **espejo calculado** de su(s) cotización(es) asociada(s) — no hay edición manual de estado
+- **Mapeo cotización → proyecto:** `borrador/enviada/visita/aprobada` → `aprobada`; `en_ejecucion` → `en_ejecucion`; `ejecutada/cerrada` → `cierre`; `rechazada/perdida` → `cancelado`
+- **Relación N:M** con cotizaciones via tabla `proyecto_cotizaciones`; si hay múltiples, se usa la más avanzada (salvo que todas sean `cancelado`)
+- **Archivado automático**: cuando el estado calculado llega a `cerrada`, se activa `proyectos.archivado = true` → proyecto desaparece del listado normal, visible solo con toggle "Ver archivados"
+- **`sincronizarEstadoProyecto(cotizacionId)`** en `cotizaciones.js` — se dispara en cada UPDATE de cotizaciones hacia estados relevantes
+- Eliminado selector inline de estado; `PATCH /proyectos/:id/estado` quedó comentado en código (deprecado)
+- **ProyectoForm.jsx**: filtro de cotizaciones disponibles incluye `'aprobada'` y `'en_ejecucion'` para asociar al crear proyecto
+
+#### FIN.SII — Registro de Compras y Ventas ✅
+- Sincronización vía **Playwright + Chromium headless** (Railway): navega el portal real del SII, hace login completo, intercepta `conversationId` de la SPA, llama a `facadeService` desde el contexto del browser
+- Clave tributaria almacenada en `sii_config.clave_sii` por empresa (editable desde Configuración → Integraciones); `SII_CLAVE` como variable de entorno está **deprecada**
+- Documentos guardados en `facturas_sii` con deduplicación por `sii_detalle_codigo` (bigint UNIQUE = `detCodigo` del SII)
+- Ver sección 16 para documentación técnica completa del flujo
 
 ---
 
@@ -333,6 +355,10 @@ Cotizacion {
 - Cambio de estado manual desde listado (select inline)
 - Al aprobar → crea movimiento de ingreso en Finanzas automáticamente
 - Al eliminar una cotización aprobada → elimina el movimiento de finanzas asociado
+- Al cambiar a `ejecutada` → abre `ModalEnviarEjecucion.jsx` con: fotos del proyecto (de `visita_fotos` vía visitas del `cotizacion_id`), comprobantes de pago (`pagos_comprobantes`, con opción de adjuntar archivos nuevos), saldo pendiente desglosado por condición de pago, envío de correo con copia a `contacto@mamkam.cl`
+- `POST /cotizaciones/:id/enviar-email-ejecucion`: recalcula saldo en servidor, descarga fotos/comprobantes y los adjunta vía Nodemailer
+- Columnas nuevas: `email_ejecucion_enviado` (bool), `email_ejecucion_fecha` (timestamptz), `email_ejecucion_mensaje` (text)
+- Cada UPDATE de estado dispara `sincronizarEstadoProyecto()` para mantener proyecto espejo
 
 #### 4.1.4 Pendiente de Implementar 🔲
 
@@ -394,6 +420,7 @@ OrdenCompra {
 - CRUD básico de órdenes de compra (solo rol admin)
 - Items por OC (código, descripción, cantidad, precio unitario)
 - Al pagar OC → crea movimiento de egreso en Finanzas
+- Selector de cotización para asociar a OC incluye `'aprobada'` y `'en_ejecucion'`
 
 **Pendiente 🔲:**
 - Flujo de aprobación por rangos de monto
@@ -676,20 +703,20 @@ DOCUMENTO ENTRANTE
 
 ---
 
-### 4.8 MÓDULO VIS — Visitas a Terreno ⚠️ Parcial
+### 4.8 MÓDULO VIS — Visitas a Terreno ✅ Operativo
 
-**Propósito:** Registrar y gestionar visitas de técnicos/instaladores a terreno desde una cotización aprobada. Incluye checklist de preguntas por producto, fotos del lugar y resumen IA.
+**Propósito:** Registrar y gestionar visitas de técnicos/instaladores a terreno desde una cotización aprobada. Incluye checklist dinámico por producto, fotos/videos/documentos en Storage y resumen IA.
 
 #### 4.8.1 Acceso al módulo
 
-El módulo se activa desde `CotizacionDetalle.jsx` mediante un botón flotante (`fixed bottom-6 right-6`) visible únicamente cuando el estado de la cotización es `aprobada`, `en_ejecucion` o `cerrada`. Al hacer clic se abre `ModalVisita.jsx`.
+El módulo se activa desde `CotizacionDetalle.jsx` mediante un botón flotante (`fixed bottom-6 right-6`) visible cuando la cotización está en `aprobada`, `en_ejecucion` o `cerrada`. También accesible desde la App Mamkam Conecta (Expo).
 
 #### 4.8.2 Componentes Frontend
 
 | Archivo | Descripción |
 |---------|-------------|
-| `frontend/src/modules/cotizaciones/ModalVisita.jsx` | Modal overlay con 4 tabs: Datos, Checklist, Fotos, Resumen IA |
-| `frontend/src/modules/cotizaciones/visitaChecklists.js` | Preguntas hardcodeadas (referencia; fuente oficial migrada a Supabase) |
+| `frontend/src/modules/cotizaciones/ModalVisita.jsx` | Modal overlay ERP con 4 tabs |
+| `frontend/src/modules/cotizaciones/visitaChecklists.js` | Preguntas hardcodeadas (referencia histórica; fuente oficial es Supabase) |
 
 #### 4.8.3 ModalVisita — Estructura
 
@@ -703,42 +730,183 @@ ModalVisita
 │   └── Notas
 ├── Tab CHECKLIST
 │   ├── Selector de productos (si visita.productos está vacío)
-│   ├── Preguntas cargadas desde visita_preguntas (Supabase)
+│   ├── Preguntas cargadas desde visita_preguntas (Supabase, NO hardcodeadas)
 │   ├── Agrupadas por: General / Toldo Vela / Pasto Sintético / Caucho Continuo
 │   └── Respuestas guardadas con UPSERT debounced (600ms) en visita_checklist
-├── Tab FOTOS        (estructura implementada, lógica pendiente)
-└── Tab RESUMEN IA   (estructura implementada, lógica pendiente)
+├── Tab FOTOS
+│   ├── Upload a Storage: fotos → bucket visitas-fotos, videos → visitas-audios,
+│   │   documentos/planos → visitas-documentos
+│   └── Registros en tabla visita_fotos (tipo: 'foto' | 'video' | 'documento')
+└── Tab RESUMEN IA   (estructura implementada)
 ```
 
-**Navegación footer adaptativa:**
-- Tab Datos (sin visita creada): Cancelar | Crear Visita
-- Tab Datos (visita existente): Cancelar | Siguiente →
-- Tab Checklist / Fotos: ← Anterior | Siguiente →
-- Tab Resumen IA: ← Anterior | Cerrar
+#### 4.8.4 Estados de visita (unificados)
 
-#### 4.8.4 Normalización de nombres de producto
+| Estado | Descripción |
+|--------|-------------|
+| `planificada` | Visita agendada, aún no ejecutada |
+| `ejecutada` | Visita realizada |
 
-Los productos se almacenan en BD como `snake_case` pero se muestran como etiquetas legibles. Se usan dos mapeos a nivel de módulo:
+> Migración aplicada en ambos sistemas (ERP + App): eliminados `agendada`, `en_curso`, `realizada`, `completada`, `programada`, `resumida`.
+
+#### 4.8.5 Normalización de nombres de producto
 
 ```js
 LABEL_TO_SNAKE = { 'Toldo Vela': 'toldo_vela', 'Pasto Sintético': 'pasto_sintetico', 'Caucho Continuo': 'caucho_continuo' }
 SNAKE_TO_LABEL = { 'toldo_vela': 'Toldo Vela', 'pasto_sintetico': 'Pasto Sintético', 'caucho_continuo': 'Caucho Continuo' }
 ```
 
-#### 4.8.5 Tablas Supabase
+#### 4.8.6 Tablas Supabase
 
 | Tabla | Descripción |
 |-------|-------------|
 | `visitas` | Registro de cada visita a terreno |
 | `visita_preguntas` | Preguntas del checklist configurables por empresa y producto |
 | `visita_checklist` | Respuestas por visita y pregunta |
+| `visita_fotos` | Adjuntos multimedia por visita (foto, video, documento) |
 
-#### 4.8.6 Pendientes
+#### 4.8.7 Pendientes
 
-- **Fix RLS**: `visita_preguntas` tiene RLS habilitado sin políticas SELECT → devuelve `[]` con `error: null`. Solución: `ALTER TABLE visita_preguntas DISABLE ROW LEVEL SECURITY;` o crear política permisiva.
-- **Remover logs de diagnóstico** en `ModalVisita.jsx` y `ConfiguracionPage.jsx`
-- Implementar lógica real de Tab Fotos (upload a Supabase Storage)
+- Rediseño tabs App: Home con lista visitas planificadas + calendario; tab Checklist sin fechas; guardado progresivo entre tabs
+- Botones "Google Calendar" y "Recordar WhatsApp" pendiente en `ModalVisita.jsx` del ERP (solo existen en la App hoy)
 - Implementar Tab Resumen IA (llamada a Claude API)
+
+---
+
+### 4.9 MÓDULO PROJ — Proyectos ✅ Operativo
+
+**Propósito:** Agrupar cotizaciones en un proyecto, con estado calculado automáticamente como espejo del estado de sus cotizaciones.
+
+#### 4.9.1 Regla de estado (calculado, no editable manualmente)
+
+| Estado cotizaciones asociadas | Estado proyecto |
+|-------------------------------|-----------------|
+| `borrador` / `enviada` / `visita` / `aprobada` | `aprobada` |
+| `en_ejecucion` | `en_ejecucion` |
+| `ejecutada` / `cerrada` | `cierre` → dispara archivado |
+| `rechazada` / `perdida` (todas) | `cancelado` |
+
+- Si hay N cotizaciones asociadas (N:M via `proyecto_cotizaciones`), se usa la más avanzada, salvo que TODAS sean `cancelado`
+- Al llegar a estado `cierre`: `proyectos.archivado = true` → desaparece del listado normal
+
+#### 4.9.2 Función de sincronización
+
+`sincronizarEstadoProyecto(cotizacionId)` en `backend/src/routes/cotizaciones.js`:
+- Se dispara automáticamente en UPDATE de cotizaciones hacia: `aprobada`, `en_ejecucion`, `ejecutada`, `cerrada`, `rechazada`, `perdida`
+- Calcula el estado más avanzado entre todas las cotizaciones del proyecto
+- Hace PATCH en `proyectos` con el estado calculado y `archivado` si corresponde
+
+#### 4.9.3 Frontend
+
+- `ProyectoForm.jsx`: selector de cotizaciones para asociar incluye `'aprobada'` y `'en_ejecucion'`
+- Estado NO editable inline — se eliminó el selector; `PATCH /proyectos/:id/estado` comentado en código
+- Toggle "Ver archivados" para acceder a proyectos completados
+
+---
+
+### 4.10 MÓDULO CRM ✅ Operativo
+
+**Propósito:** Gestión de leads y clientes, con captación automática desde Meta Lead Ads y seguimiento visual.
+
+#### 4.10.1 Funcionalidades implementadas
+
+| Feature | Descripción |
+|---------|-------------|
+| **Vista Lista** | Filtros por estado, búsqueda por nombre/email/teléfono |
+| **Vista Kanban** | Drag-and-drop (@dnd-kit/core) entre 5 columnas de estado |
+| **Etiquetas** | Sistema de etiquetas con color; N:M entre clientes y etiquetas |
+| **Recordatorio** | Campo `fecha_recordatorio`: badge rojo/amarillo/verde según vencimiento |
+| **Link WhatsApp** | `wa.me/{telefono}` desde teléfono del lead en todas las vistas |
+| **Webhook Meta** | `/api/crm/webhook` — leads automáticos desde Facebook Lead Ads |
+
+#### 4.10.2 Tablas
+
+| Tabla | Descripción |
+|-------|-------------|
+| `clientes` | Leads/clientes; incluye `fecha_recordatorio` (date) |
+| `crm_etiquetas` | id, empresa_id, nombre, color, created_at |
+| `cliente_etiquetas` | cliente_id + etiqueta_id (N:M) |
+
+#### 4.10.3 Pendiente
+
+- Recordatorio automático por WhatsApp (pausado): infraestructura lista (`services/whatsapp.js`, Meta Cloud API), falta aprobar template `'recordatorio_contacto_lead'` en Meta Business Manager
+
+---
+
+### 4.11 MÓDULO FIN.SII — Registro de Compras y Ventas ✅ Operativo
+
+**Propósito:** Sincronizar automáticamente el RCV del SII hacia la tabla `facturas_sii`, usando Playwright para navegar el portal real del SII con autenticación completa.
+
+#### 4.11.1 Por qué Playwright (no axios/fetch)
+
+El portal del SII usa un WAF que detecta el fingerprint TLS/HTTP2 del cliente (JA3, orden de headers, ALPN). Un cliente HTTP convencional "camina distinto" a un navegador real aunque replique headers idénticos — el bloqueo ocurre incluso desde IP residencial. Confirmado empíricamente: solo un navegador Chromium real navegando el flujo humano completo evita el rechazo.
+
+#### 4.11.2 Flujo de autenticación (obligatorio, no se puede acortar)
+
+```
+1. GET https://www.sii.cl (establece cookies iniciales)
+2. Navegar a misiir.sii.cl → redirige al formulario de login (zeusr.sii.cl)
+3. Teclear RUT+DV CONCATENADOS SIN separador en #rutcntr
+   (ej: rut=78348727, dv=6 → teclear "783487276")
+   — usar pressSequentially(delay=200ms), NO .fill()
+   — el campo tiene listener JS que reformatea en vivo
+4. Submit → URL destino normal: misiir.sii.cl/cgi_misii/siihome.cgi
+5. Navegar explícitamente a https://www4.sii.cl/consdcvinternetui/#/index
+6. Interceptar primer request getDatosInicio → extraer conversationId
+```
+
+#### 4.11.3 conversationId — crítico
+
+**NUNCA** generar con `crypto.randomUUID()`. El SII rechaza cualquier conversationId no inicializado por su propia SPA con: *"El token no es valido: NO Existen Datos"*.
+
+Se debe interceptar via `page.on('request')` el request que la SPA dispara sola a `getDatosInicio` al cargar `#/index` y extraer `body.metaData.conversationId`. Ese mismo valor se reutiliza en todas las llamadas de la sesión.
+
+#### 4.11.4 Endpoints y payloads (ingeniería inversa — no documentados por el SII)
+
+Todos son `POST` a `https://www4.sii.cl/consdcvinternetui/services/data/facadeService/{endpoint}`, ejecutados con `page.evaluate(fetch(..., { credentials: 'include' }))` desde dentro del browser (no desde Node con axios — el SII rechaza llamadas externas aunque usen cookies correctas).
+
+| Endpoint | Payload `data` clave | Nota |
+|----------|---------------------|------|
+| `getResumen` | `{ rutEmisor, dvEmisor, ptributario, estadoContab: 'REGISTRO', operacion: 'COMPRA'\|'VENTA', busquedaInicial: true }` | Filtrar respuesta: `dcvTipoIngresoDoc === 'DET_ELE' \| 'DET_PAP'`; usar `rsmnTipoDocInteger` como `codTipoDoc` |
+| `getDetalleCompra` | `{ ..., operacion: 'COMPRA', estadoContab: 'REGISTRO', accionRecaptcha: 'RCV_DETC', tokenRecaptcha: 't-o-k-e-n-web' }` | ⚠️ payload DISTINTO a Venta |
+| `getDetalleVenta` | `{ ..., operacion: '', estadoContab: '', accionRecaptcha: 'RCV_DETV', tokenRecaptcha: 't-o-k-e-n-web' }` | `operacion` y `estadoContab` vacíos (no simétrico con Compra) |
+
+#### 4.11.5 Infraestructura y configuración
+
+| Variable / Config | Valor / Descripción |
+|-------------------|---------------------|
+| `PLAYWRIGHT_BROWSERS_PATH=0` | Chromium dentro de `node_modules`, persiste en imagen Railway |
+| `SII_RUT`, `SII_DV` | Variables de entorno — RUT de la empresa (no cambia) |
+| `sii_config.clave_sii` | Clave tributaria por empresa — editable desde Configuración → Integraciones → SII. `SII_CLAVE` env var **deprecada** |
+| `railway.json` buildCommand | `"cd backend && npm install && npx playwright install --with-deps chromium"` — instalación obligatoria en build. **⚠️ nixpacks.toml es ignorado si existe buildCommand en railway.json** |
+| `waitUntil: 'domcontentloaded'` | Usar en todos los `page.goto()` — el SII tiene analytics pesados (Adobe, Qualtrics, GA) que impiden que `networkidle` se cumpla en Railway |
+
+#### 4.11.6 Deduplicación en BD
+
+Columna `facturas_sii.sii_detalle_codigo` (bigint UNIQUE) = campo `detCodigo` del SII. Upsert con `onConflict: 'sii_detalle_codigo'` — más confiable que folio+rut porque el folio se repite entre emisores distintos.
+
+#### 4.11.7 Mapeo de campos SII → `facturas_sii`
+
+| Campo BD | Campo SII | Transformación |
+|----------|-----------|----------------|
+| `folio` | `detNroDoc` | `String()` |
+| `rut_contraparte` | `detRutDoc` + `detDvDoc` | `"${detRutDoc}-${detDvDoc}"` |
+| `razon_social` | `detRznSoc` | directo |
+| `fecha` | `detFchDoc` | `"DD/MM/YYYY"` → `"YYYY-MM-DD"` |
+| `fecha_recepcion` | `detFecRecepcion` | `"DD/MM/YYYY HH:mm:ss"` → ISO timestamp |
+| `neto` | `detMntNeto` | `?? 0` |
+| `iva` | `detMntIVA` | `?? 0` |
+| `total` | `detMntTotal` | `?? 0` |
+| `tipo_doc` | `detTipoDoc` | `String()` — numérico directo (33, 34…) |
+| `sii_detalle_codigo` | `detCodigo` | directo |
+
+#### 4.11.8 Ruta alternativa descartada: MIPE (Plan B)
+
+Existe ruta alternativa via `www1.sii.cl/cgi-bin/Portal001/mipeAdminDocsRcp.cgi` con exportación XLS. Requiere doble login (empresa + representante legal). Abandonada a favor de RCV por complejidad y necesidad de clave adicional más sensible. Documentado aquí como respaldo si el SII cambia su portal de RCV.
+
+#### 4.11.9 Advertencia de mantenimiento
+
+Este flujo depende de la estructura **actual** del portal SII (nombres de endpoints, campos de formulario, comportamiento de la SPA Angular). Un rediseño del portal o cambio de WAF puede romperlo completamente. Para diagnosticar: usar Playwright en modo `headless: false` con listeners `page.on('request'/'response')` para capturar el tráfico real nuevo.
 
 ---
 
@@ -872,8 +1040,13 @@ SNAKE_TO_LABEL = { 'toldo_vela': 'Toldo Vela', 'pasto_sintetico': 'Pasto Sintét
 |--------|-------------|
 | `borrador` | En edición, no enviada |
 | `enviada` | Enviada al cliente (al enviar WA/email cambia automáticamente) |
+| `visita` | Visita a terreno programada o ejecutada |
 | `aprobada` | Cliente confirmó (crea movimiento de ingreso en Finanzas) |
+| `en_ejecucion` | Trabajo en curso; cotización seleccionable en OC |
+| `ejecutada` | Trabajo terminado; dispara email de término de proyecto |
+| `cerrada` | Proceso completo |
 | `rechazada` | Cliente rechazó |
+| `perdida` | Oportunidad perdida |
 
 > Los estados `en_revision`, `convertida`, `cancelada` y `vencida` están especificados pero no implementados aún.
 
@@ -1002,7 +1175,7 @@ COT ──→ CONT  (factura emitida genera asiento de venta / CxC)
 ### 8.1 Plataforma Actual
 
 - **Supabase** (PostgreSQL cloud) — `@supabase/supabase-js` v2
-- Tablas confirmadas: `usuarios`, `trabajadores`, `cotizaciones`, `cotizacion_items`, `ordenes_compra`, `oc_items`, `movimientos_bancarios`, `amonestaciones`, `clientes`, `visitas`, `visita_preguntas`, `visita_checklist`
+- Tablas confirmadas: `usuarios`, `trabajadores`, `cotizaciones`, `cotizacion_items`, `ordenes_compra`, `oc_items`, `movimientos_bancarios`, `amonestaciones`, `clientes`, `visitas`, `visita_preguntas`, `visita_checklist`, `visita_fotos`, `proyectos`, `proyecto_cotizaciones`, `crm_etiquetas`, `cliente_etiquetas`, `facturas_sii`, `sii_config`, `integraciones`
 - Sin migraciones formales aún (schema gestionado manualmente en Supabase Dashboard)
 - Seed de prueba en `database/seed.sql`
 
@@ -1116,6 +1289,88 @@ visita_checklist {
 - 41 preguntas totales: 2 general + 12 toldo_vela + 13 caucho_continuo + 14 pasto_sintetico
 - Inicia con `DELETE ... WHERE empresa_id = '...'` para re-ejecución segura
 - `empresa_id`: `22101e7c-ce32-49dc-9a8f-4ea25fc00d2f`
+
+### 8.3.3 Tablas Nuevas Implementadas (v1.9 — Proyectos, CRM ampliado, Visitas fotos, FIN.SII)
+
+```sql
+-- VISITA_FOTOS (adjuntos multimedia por visita)
+visita_fotos {
+  id          UUID        PK
+  visita_id   UUID        FK → visitas
+  tipo        VARCHAR     CHECK ('foto' | 'video' | 'documento')
+  url         VARCHAR     URL pública del archivo en Storage
+  nombre      VARCHAR     Nombre original del archivo
+  created_at  TIMESTAMPTZ
+}
+-- Storage buckets: visitas-fotos / visitas-audios (video) / visitas-documentos
+-- CHECK constraint ampliado para incluir 'documento' (antes solo 'foto'/'video')
+
+-- PROYECTOS
+proyectos {
+  id          UUID        PK
+  empresa_id  UUID
+  nombre      VARCHAR
+  estado      VARCHAR     Calculado: 'aprobada'|'en_ejecucion'|'cierre'|'cancelado'
+  archivado   BOOLEAN     DEFAULT false — true cuando estado llega a 'cierre'
+  created_at  TIMESTAMPTZ
+  updated_at  TIMESTAMPTZ
+}
+
+-- PROYECTO_COTIZACIONES (N:M)
+proyecto_cotizaciones {
+  proyecto_id    UUID    FK → proyectos
+  cotizacion_id  UUID    FK → cotizaciones
+  PRIMARY KEY (proyecto_id, cotizacion_id)
+}
+
+-- CRM_ETIQUETAS
+crm_etiquetas {
+  id          UUID        PK
+  empresa_id  UUID
+  nombre      VARCHAR
+  color       VARCHAR     Código hex (ej: '#3B82F6')
+  created_at  TIMESTAMPTZ
+}
+
+-- CLIENTE_ETIQUETAS (N:M)
+cliente_etiquetas {
+  cliente_id   UUID    FK → clientes
+  etiqueta_id  UUID    FK → crm_etiquetas
+  PRIMARY KEY (cliente_id, etiqueta_id)
+}
+-- Campo adicional en clientes: fecha_recordatorio DATE
+
+-- SII_CONFIG (clave tributaria por empresa)
+sii_config {
+  empresa_id  UUID        PK
+  rut         VARCHAR     NOT NULL (de SII_RUT env var al crear)
+  clave_sii   VARCHAR     Clave tributaria cifrada en tránsito (HTTPS)
+  updated_at  TIMESTAMPTZ
+}
+
+-- FACTURAS_SII (Registro de Compras y Ventas del SII)
+facturas_sii {
+  id                   TEXT        PK (UUID generado en JS)
+  empresa_id           UUID
+  tipo                 VARCHAR     'compra' | 'venta'
+  tipo_doc             VARCHAR     Código numérico SII ('33', '34', '61'…)
+  tipo_compra_venta    VARCHAR     DEFAULT ''
+  folio                VARCHAR
+  numero_interno       VARCHAR     DEFAULT ''
+  rut_contraparte      VARCHAR     Formato "XXXXXXXX-X"
+  razon_social         VARCHAR
+  fecha                DATE        Formato ISO YYYY-MM-DD
+  fecha_recepcion      TIMESTAMPTZ Opcional
+  monto_exento         INTEGER     DEFAULT 0
+  neto                 INTEGER     DEFAULT 0
+  iva                  INTEGER     DEFAULT 0
+  iva_no_recuperable   INTEGER     DEFAULT 0
+  total                INTEGER     DEFAULT 0
+  estado               VARCHAR     DEFAULT 'vigente'
+  sii_detalle_codigo   BIGINT      UNIQUE — campo detCodigo del SII (deduplicación)
+  created_at           TIMESTAMPTZ
+}
+```
 
 ### 8.4 Esquema Objetivo
 
@@ -1400,6 +1655,9 @@ CREATE INDEX idx_cotizaciones_fts ON cotizaciones USING gin(
 | OC pagada | Crea movimiento de egreso en Finanzas |
 | Cartola CSV importada | Auto-concilia movimientos CSV con pendientes por tipo+monto |
 | Envío WA/email cotización | Cambia estado a `enviada` si estaba en `borrador` |
+| Cotización → `aprobada`/`en_ejecucion`/`ejecutada`/`cerrada`/`rechazada`/`perdida` | `sincronizarEstadoProyecto()` actualiza estado y archivado del proyecto asociado |
+| Cotización → `ejecutada` | Abre `ModalEnviarEjecucion` con email de término al cliente |
+| Sincronización SII RCV | `guardarDocumentosRCV()` hace upsert en `facturas_sii` con deduplicación por `sii_detalle_codigo` |
 
 ### 9.2 Automatizaciones Planificadas 🔲
 
@@ -1819,28 +2077,42 @@ CREATE POLICY tenant_isolation ON cotizaciones
 - **GitHub:** [github.com/nicolascisternasm/erp-mamkam](https://github.com/nicolascisternasm/erp-mamkam)
 - Rama de producción: `master`
 
-### Deploy automático (GitHub Actions)
-Al hacer push a `master`, el workflow `.github/workflows/deploy.yml` ejecuta dos jobs en paralelo:
+### Backend — Railway
 
-| Job | Qué hace |
-|-----|----------|
-| **deploy-frontend** | `npm ci` + `vite build` → FTP de `frontend/dist/` a `/public_html/erp.mamkam/` |
-| **deploy-backend** | FTP de `backend/src/` a `/nodeapps/erp-api/src/` + reinicio de Node vía `tmp/restart.txt` |
+El backend migró de cPanel/Passenger a **Railway**. Deploy automático al hacer push a `master`.
 
-- El reinicio se dispara reescribiendo `backend/tmp/restart.txt` con contenido único cada run (timestamp + SHA), de modo que el FTP siempre lo detecta como cambiado y Passenger recarga el proceso Node.
-- **Nota:** el pipeline sube solo `backend/src/`; `package.json` y `node_modules` no se despliegan, por lo que instalar dependencias nuevas del backend requiere `npm install` manual en el servidor.
+**`railway.json` (raíz del repo):**
+```json
+{
+  "build": {
+    "builder": "NIXPACKS",
+    "buildCommand": "cd backend && npm install && npx playwright install --with-deps chromium"
+  },
+  "deploy": {
+    "startCommand": "node backend/src/server.js",
+    "restartPolicyType": "ON_FAILURE"
+  }
+}
+```
+> ⚠️ El `buildCommand` en `railway.json` **bypasea completamente nixpacks.toml** — si hay un buildCommand explícito, cualquier `nixpacks.toml` en el repo es ignorado sin warning. La instalación de Chromium va en el buildCommand, no en nixpacks.
 
-### Variables de entorno del backend
-Ubicadas en `/nodeapps/erp-api/.env` (no versionadas):
-- `ANTHROPIC_API_KEY` — IA (OCR de boletas, amonestaciones)
-- `JWT_SECRET`, `JWT_EXPIRES_IN` — autenticación
-- `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` — acceso backend a Supabase
-- `META_VERIFY_TOKEN`, `META_PAGE_ACCESS_TOKEN`, `META_EMPRESA_ID` — webhook CRM Meta Lead Ads
+**Variables de entorno en Railway UI:**
+| Variable | Descripción |
+|----------|-------------|
+| `ANTHROPIC_API_KEY` | IA (OCR de boletas, amonestaciones) |
+| `JWT_SECRET`, `JWT_EXPIRES_IN` | Autenticación |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` | BD |
+| `META_VERIFY_TOKEN`, `META_PAGE_ACCESS_TOKEN`, `META_EMPRESA_ID` | Webhook Meta Lead Ads |
+| `SII_RUT`, `SII_DV` | RUT de la empresa (sin dígito verificador separado) |
+| `PLAYWRIGHT_BROWSERS_PATH=0` | Chromium dentro de node_modules — persiste en imagen |
+| ~~`SII_CLAVE`~~ | **Deprecada** — la clave tributaria vive en `sii_config.clave_sii` |
 
-### Hosting (cPanel + Passenger)
-- Frontend (SPA React): `/public_html/erp.mamkam/`
-- Backend (Node.js/Express bajo Passenger): `/nodeapps/erp-api/`
-- **Fix de routing SPA:** el `.htaccess` del ERP usa `RewriteRule ^ index.html [QSA,END]`. El flag `END` (no `L`) evita que las reglas heredadas del sitio padre reprocesen la petición y redirijan al home, permitiendo el deep-linking en el subdirectorio.
+### Frontend — GitHub Pages / Hosting externo
+
+Deploy automático del frontend a `app.mamkam.cl` via GitHub Actions al hacer push a `master`.
+
+### Fix de routing SPA (legacy, antes en cPanel)
+El `.htaccess` del ERP usaba `RewriteRule ^ index.html [QSA,END]`. Flag `END` (no `L`) para evitar reprocessing heredado del sitio padre. Ya no aplica con Railway.
 
 ---
 
@@ -1899,6 +2171,15 @@ Ubicadas en `/nodeapps/erp-api/.env` (no versionadas):
 
 ---
 
-*Documento Maestro ERP MAMKAM — v1.8.0*  
-*Actualizado el 2026-07-29 — agrega módulo VIS (Visitas): ModalVisita, checklist desde Supabase, ConfiguracionPage tab Visitas, tablas visitas/visita_preguntas/visita_checklist*  
-*Próxima revisión: al resolver RLS de visita_preguntas, completar tabs Fotos y Resumen IA, o al avanzar CRM/IAD/CONT*
+## PENDIENTES ABIERTOS (v1.9)
+
+- **App Visitas — rediseño tabs**: Home con lista visitas planificadas (no solo del día) bajo el calendario; tab Datos sin "Información del Proyecto" ni "Planos Adjuntos"; botones Google Calendar/Recordar WhatsApp también en `ModalVisita.jsx` del ERP; guardado progresivo entre tabs; tab Checklist sin fechas (mover a Datos)
+- **Emisión DTE (SOAP)**: infraestructura de certificado digital lista (`obtenerSemilla`, `obtenerToken` en `services/sii.js`, `siiAgent` con `SSL_OP_LEGACY_SERVER_CONNECT` para TLS legacy de `palena.sii.cl`). Pendiente: firma XML + envío DTE + consulta de estado — proyecto aparte
+- **Recordatorio WhatsApp CRM**: infraestructura lista (`services/whatsapp.js`, Meta Cloud API). Pendiente: crear y aprobar template `'recordatorio_contacto_lead'` (categoría Utility) en Meta Business Manager
+- **Mapeo RCV → facturas ERP**: los documentos se guardan en `facturas_sii` pero aún no se cruzan automáticamente con cotizaciones u órdenes de compra del ERP
+
+---
+
+*Documento Maestro ERP MAMKAM — v1.9.0*  
+*Actualizado el 2026-08-07 — Integración SII RCV con Playwright (login real + facadeService + guardado en facturas_sii), módulo Proyectos (estado espejo de cotizaciones), CRM ampliado (Kanban, etiquetas, recordatorio), Cotizaciones (nuevos estados + email ejecucion), Visitas (visita_fotos, estados unificados, checklist dinámico), OC (selector cotizaciones ampliado), infraestructura Railway*  
+*Próxima revisión: al implementar mapeo RCV→facturas ERP, emisión DTE, o rediseño tabs App Visitas*
