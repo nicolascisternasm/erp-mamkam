@@ -199,6 +199,10 @@ async function loginWebSII(rut, clave) {
     referencia: 'https://www4.sii.cl/consdcvinternetui/#/index',
   })
 
+  // [DIAG] Confirmar campos exactos que se envían en el POST
+  console.log('[SII Login DIAG] paso 2 — campos POST:', [...loginData.keys()].join(', '))
+  console.log('[SII Login DIAG] paso 2 — rut enviado:', rut, '| dv: 6 | referencia presente:', loginData.has('referencia'))
+
   let resp2
   try {
     resp2 = await axios.post(
@@ -213,7 +217,7 @@ async function loginWebSII(rut, clave) {
           'Origin': 'https://zeusr.sii.cl',
           'Cookie': jarToStr(jar),
         },
-        maxRedirects: 5,
+        maxRedirects: 0,      // [DIAG] sin seguir redirects — ver el 302 crudo si lo hay
         validateStatus: (s) => s < 500,
       }
     )
@@ -222,6 +226,18 @@ async function loginWebSII(rut, clave) {
     console.error('[SII Login] stack paso 2:', err.stack)
     throw err
   }
+
+  // [DIAG] Respuesta completa del paso 2
+  console.log('[SII Login DIAG] paso 2 — status:', resp2.status)
+  console.log('[SII Login DIAG] paso 2 — headers completos:', JSON.stringify(resp2.headers, null, 2))
+  console.log('[SII Login DIAG] paso 2 — location header:', resp2.headers['location'] || '(no existe)')
+  console.log('[SII Login DIAG] paso 2 — set-cookie raw:', JSON.stringify(resp2.headers['set-cookie'] || []))
+  const bodyStr = typeof resp2.data === 'string' ? resp2.data : JSON.stringify(resp2.data)
+  console.log('[SII Login DIAG] paso 2 — body (primeros 2000):', bodyStr.substring(0, 2000))
+  console.log('[SII Login DIAG] paso 2 — body contiene jsessionid:', bodyStr.toLowerCase().includes('jsessionid'))
+  console.log('[SII Login DIAG] paso 2 — body contiene "clave":', bodyStr.toLowerCase().includes('clave'))
+  console.log('[SII Login DIAG] paso 2 — body contiene "error":', bodyStr.toLowerCase().includes('error'))
+  console.log('[SII Login DIAG] paso 2 — body contiene "mi sii":', bodyStr.toLowerCase().includes('mi sii'))
 
   jar = mergeCookies(jar, parseCookies(resp2.headers['set-cookie']))
   console.log('[SII Login] paso 2 — status:', resp2.status, '—', jar.size, 'cookies:', [...jar.keys()].join(', '))
