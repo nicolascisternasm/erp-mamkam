@@ -1,6 +1,6 @@
 # DOCUMENTO MAESTRO — ERP MAMKAM
-**Versión:** 1.9.0  
-**Fecha:** 2026-08-07  
+**Versión:** 1.10.0  
+**Fecha:** 2026-08-08  
 **Estado:** Documento Vivo — sujeto a revisiones controladas  
 **Clasificación:** Interno / Confidencial
 
@@ -2162,6 +2162,43 @@ El `.htaccess` del ERP usaba `RewriteRule ^ index.html [QSA,END]`. Flag `END` (n
 
 ---
 
+## BUG CRÍTICO: ARCHIVO HUÉRFANO FacturasSIIPage.jsx
+
+La ruta `/facturas` del ERP renderiza `modules/facturas/FacturasPage.jsx`, **NO** `modules/facturas-sii/FacturasSIIPage.jsx` (que existe en el repo pero nunca está importado en `App.jsx` — es código muerto). Varias sesiones de trabajo editaron por error el archivo equivocado (mismo propósito, nombre casi idéntico) sin que los cambios tuvieran ningún efecto visible, causando horas de debugging innecesario.
+
+**ADVERTENCIA para el futuro:** antes de editar cualquier componente de Facturas, confirmar primero en `App.jsx` cuál es el componente realmente montado en la ruta. Considerar eliminar `FacturasSIIPage.jsx` por completo si no tiene ningún uso futuro planeado, para que no se repita la confusión.
+
+---
+
+## REMANENTE DE IVA ACUMULADO
+
+Nuevo endpoint `GET /api/facturas/remanente-iva` (`backend/src/routes/facturas.js`), calcula el arrastre de remanente de crédito fiscal IVA mes a mes:
+
+```
+remanente_mes = max(0, remanente_anterior + iva_credito - iva_debito)
+pago_del_mes  = (remanente_anterior + iva_credito - iva_debito) < 0
+                ? abs(ese valor) : 0
+```
+
+Depende de que `facturas_sii.periodo` esté poblado (viene de `detPcarga` del SII, agregado en `guardarDocumentosRCV()` — los documentos sincronizados antes de ese fix no tenían `periodo` y requirieron resincronización). Si hay huecos entre el primer y último período con datos, el endpoint devuelve `periodosFaltantes` en vez de calcular un número incorrecto.
+
+Tarjeta "Remanente de IVA Acumulado" visible en `FacturasPage.jsx` (el componente real). Validado manualmente: con datos de febrero a agosto 2026 sincronizados, el cálculo dio $9.557.421, consistente con la cifra que la contadora de la empresa manejaba de forma independiente (~$10 millones hace 1-2 meses antes del pago de julio).
+
+---
+
+## NOTA OPERATIVA: DEPLOY MANUAL DEL FRONTEND
+
+Si el deploy automático del frontend falla con `"Error: Timeout (data socket)"` en el paso de `FTP-Deploy-Action` (GitHub Actions), es una falla transitoria de conexión con el servidor cPanel, no un problema de código. Soluciones en orden:
+
+1. **Re-run failed jobs** en el Action que falló
+2. Si persiste, **deploy manual:**
+   - `npm run build` en `frontend/`
+   - Subir por FTP (FileZilla) el contenido de `frontend/dist/` a `/public_html/erp.mamkam/`
+   - Reemplazar `index.html` y los archivos `.js` con hash nuevo en `assets/`
+   - Opcionalmente borrar los archivos `.js` viejos que ya no se referencian
+
+---
+
 ## DOCUMENTOS RELACIONADOS
 
 | Documento | Descripción |
@@ -2180,6 +2217,6 @@ El `.htaccess` del ERP usaba `RewriteRule ^ index.html [QSA,END]`. Flag `END` (n
 
 ---
 
-*Documento Maestro ERP MAMKAM — v1.9.0*  
-*Actualizado el 2026-08-07 — Integración SII RCV con Playwright (login real + facadeService + guardado en facturas_sii), módulo Proyectos (estado espejo de cotizaciones), CRM ampliado (Kanban, etiquetas, recordatorio), Cotizaciones (nuevos estados + email ejecucion), Visitas (visita_fotos, estados unificados, checklist dinámico), OC (selector cotizaciones ampliado), infraestructura Railway*  
+*Documento Maestro ERP MAMKAM — v1.10.0*  
+*Actualizado el 2026-08-08 — Bug archivo huérfano FacturasSIIPage.jsx documentado; endpoint remanente IVA acumulado (GET /api/facturas/remanente-iva) validado con datos reales; sincronización RCV migrada a sesión única (COMPRA + VENTA en un solo login); nota operativa de deploy manual frontend vía FTP*  
 *Próxima revisión: al implementar mapeo RCV→facturas ERP, emisión DTE, o rediseño tabs App Visitas*
