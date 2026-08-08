@@ -386,7 +386,7 @@ export default function FacturasSIIPage() {
   useEffect(() => {
     apiClient.get('facturas/remanente-iva')
       .then(data => setRemanente(data))
-      .catch(() => {})
+      .catch(err => console.error('[Remanente IVA] error:', err))
   }, [])
 
   const POR_PAGINA    = 10
