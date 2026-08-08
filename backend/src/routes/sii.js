@@ -54,7 +54,7 @@ router.patch('/clave', requireAuth, async (req, res) => {
 // y extrae los documentos del RCV para el período solicitado.
 router.get('/rcv', requireAuth, async (req, res) => {
   try {
-    const { periodo, tipo = 'COMPRA' } = req.query
+    const { periodo, tipo } = req.query
     if (!periodo) return res.status(400).json({ error: { message: 'periodo requerido (ej: 202407)' } })
 
     const rut = process.env.SII_RUT || '78348727'
@@ -70,15 +70,21 @@ router.get('/rcv', requireAuth, async (req, res) => {
       return res.status(503).json({ error: { message: 'Clave SII no configurada — ingrésala en Configuración > Integraciones' } })
     }
 
-    const docs = await consultarRCVPlaywright(rut, dv, config.clave_sii, periodo, tipo)
+    const resultado = await consultarRCVPlaywright(rut, dv, config.clave_sii, periodo, tipo || 'AMBOS')
+    const guardados = { compra: 0, venta: 0 }
 
-    const tipoNorm = tipo.toLowerCase()
-    if (tipoNorm === 'compra' || tipoNorm === 'venta') {
-      const { guardados } = await guardarDocumentosRCV(docs, tipoNorm, req.user.empresa_id)
-      console.log(`[SII] RCV guardados en BD: ${guardados} docs (${tipoNorm} · ${periodo})`)
+    if (resultado.compra.length) {
+      const r = await guardarDocumentosRCV(resultado.compra, 'compra', req.user.empresa_id)
+      guardados.compra = r.guardados
+      console.log(`[SII] RCV guardados: ${guardados.compra} compras (${periodo})`)
+    }
+    if (resultado.venta.length) {
+      const r = await guardarDocumentosRCV(resultado.venta, 'venta', req.user.empresa_id)
+      guardados.venta = r.guardados
+      console.log(`[SII] RCV guardados: ${guardados.venta} ventas (${periodo})`)
     }
 
-    res.json({ data: docs })
+    res.json({ data: resultado, guardados })
   } catch (err) {
     console.error('[SII] Error RCV:', err.message)
     res.status(500).json({ error: { message: err.message } })

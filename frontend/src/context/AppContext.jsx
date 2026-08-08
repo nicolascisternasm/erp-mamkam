@@ -590,7 +590,7 @@ export function AppProvider({ children }) {
       cotizaciones, addCotizacion, updateCotizacion, updateCotizacionLocal, deleteCotizacion, changeCotizacionStatus, duplicateCotizacion, setCuotaEstado,
       proveedores, addProveedor, updateProveedor, deleteProveedor,
       compras, addCompra, updateCompra, deleteCompra,
-      facturasSII, addFacturaSII, updateFacturaSII, deleteFacturaSII, bulkAddFacturasSII, buscarFacturaSII,
+      facturasSII, setFacturasSII, addFacturaSII, updateFacturaSII, deleteFacturaSII, bulkAddFacturasSII, buscarFacturaSII,
       trabajadores, addTrabajador, updateTrabajador, deleteTrabajador,
       movimientos, addMovimiento, toggleConciliado,
       cuentas, addCuenta, updateCuenta, deleteCuenta, pagarCuenta,

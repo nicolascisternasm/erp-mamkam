@@ -154,7 +154,7 @@ async function obtenerToken() {
   return match[1]
 }
 
-async function consultarRCVPlaywright(rut, dv, clave, periodo, operacion) {
+async function consultarRCVPlaywright(rut, dv, clave, periodo, operacion = 'AMBOS') {
   const { chromium } = require('playwright')
   const operUp = (operacion || 'AMBOS').toUpperCase()
 
@@ -320,7 +320,8 @@ async function consultarRCVPlaywright(rut, dv, clave, periodo, operacion) {
         { endpoint, conversationId: sessionConversationId, data }
       )
 
-      const docs = []
+      const compra = []
+      const venta  = []
 
       if (operUp === 'COMPRA' || operUp === 'AMBOS') {
         console.log('[RCV] consultando COMPRA — período:', periodo)
@@ -342,7 +343,7 @@ async function consultarRCVPlaywright(rut, dv, clave, periodo, operacion) {
             accionRecaptcha: 'RCV_DETC', tokenRecaptcha: 't-o-k-e-n-web',
           })
           console.log(`[RCV] getDetalleCompra tipo ${codTipoDoc}: ${resp?.data?.length ?? 0} docs`)
-          if (Array.isArray(resp?.data)) docs.push(...resp.data)
+          if (Array.isArray(resp?.data)) compra.push(...resp.data)
         }
       }
 
@@ -366,12 +367,12 @@ async function consultarRCVPlaywright(rut, dv, clave, periodo, operacion) {
             accionRecaptcha: 'RCV_DETV', tokenRecaptcha: 't-o-k-e-n-web',
           })
           console.log(`[RCV] getDetalleVenta tipo ${codTipoDoc}: ${resp?.data?.length ?? 0} docs`)
-          if (Array.isArray(resp?.data)) docs.push(...resp.data)
+          if (Array.isArray(resp?.data)) venta.push(...resp.data)
         }
       }
 
-      console.log(`[RCV] total docs: ${docs.length} — memoria antes de cerrar: ${memMB()}`)
-      return docs
+      console.log(`[RCV] total docs: compra=${compra.length} venta=${venta.length} — memoria antes de cerrar: ${memMB()}`)
+      return { compra, venta }
     } finally {
       await browser.close().catch(() => {})
       console.log(`[RCV] browser cerrado — memoria final: ${memMB()}`)
@@ -383,8 +384,8 @@ async function consultarRCVPlaywright(rut, dv, clave, periodo, operacion) {
   const timeoutPromise = new Promise((_, reject) => {
     timeoutId = setTimeout(() => {
       if (browser) browser.close().catch(() => {})
-      reject(new Error('consultarRCVPlaywright: timeout global (60s)'))
-    }, 60000)
+      reject(new Error('consultarRCVPlaywright: timeout global (90s)'))
+    }, 90000)
   })
 
   const runPromise = run()

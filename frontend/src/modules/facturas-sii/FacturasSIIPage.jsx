@@ -368,7 +368,7 @@ function ImportModal({ open, onImport, onClose }) {
 
 /* ── Página principal ────────────────────────────────────────────── */
 export default function FacturasSIIPage() {
-  const { facturasSII, addFacturaSII, updateFacturaSII, deleteFacturaSII, bulkAddFacturasSII } = useApp()
+  const { facturasSII, setFacturasSII, addFacturaSII, updateFacturaSII, deleteFacturaSII, bulkAddFacturasSII } = useApp()
 
   const [tab,          setTab]          = useState('compra')   // 'compra' | 'venta'
   const [search,       setSearch]       = useState('')
@@ -463,20 +463,20 @@ export default function FacturasSIIPage() {
     }
   }
 
-  const actualizarRCV = async () => {
-    const year  = anioFilter || String(new Date().getFullYear())
-    const month = mesFilter  || String(new Date().getMonth() + 1).padStart(2, '0')
+  const sincronizarRCV = async () => {
+    const year    = anioFilter || String(new Date().getFullYear())
+    const month   = mesFilter  || String(new Date().getMonth() + 1).padStart(2, '0')
     const periodo = `${year}${month}`
-    const tipo    = tab.toUpperCase() // 'COMPRA' | 'VENTA'
 
     const controller = new AbortController()
-    const timeoutId  = setTimeout(() => controller.abort(), 65000)
+    const timeoutId  = setTimeout(() => controller.abort(), 100000)
 
     setRcvLoading(true)
     try {
-      const data = await apiClient.get(`sii/rcv?periodo=${periodo}&tipo=${tipo}`, controller.signal)
-      console.log('[RCV] respuesta raw del SII (periodo:', periodo, 'tipo:', tipo, '):', data)
-      showToast('success', `RCV consultado (${periodo} · ${tipo}). Ver consola para respuesta cruda.`)
+      const { guardados } = await apiClient.get(`sii/rcv?periodo=${periodo}`, controller.signal)
+      const facturas = await apiClient.get('facturas')
+      setFacturasSII(Array.isArray(facturas) ? facturas : [])
+      showToast('success', `${guardados.compra} compras y ${guardados.venta} ventas sincronizadas`)
     } catch (err) {
       if (err.name === 'AbortError') {
         showToast('error', 'Tiempo de espera agotado al conectar con el SII')
@@ -501,13 +501,13 @@ export default function FacturasSIIPage() {
         </div>
         <div className="flex gap-2">
           <button
-            onClick={actualizarRCV}
+            onClick={sincronizarRCV}
             disabled={rcvLoading}
             className="btn-secondary disabled:opacity-50"
-            title={`Consultar RCV ${tab === 'compra' ? 'Compras' : 'Ventas'} desde el SII`}
+            title="Sincronizar Compras y Ventas con el SII"
           >
             <RefreshCw className={`w-4 h-4 ${rcvLoading ? 'animate-spin' : ''}`} />
-            {rcvLoading ? 'Conectando con el SII, puede tardar hasta 30 seg…' : 'Actualizar'}
+            {rcvLoading ? 'Sincronizando compras y ventas con el SII, puede tardar hasta 40 seg…' : 'Sincronizar SII'}
           </button>
           <button
             onClick={() => setModalImport(true)}
