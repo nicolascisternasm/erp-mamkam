@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { FileText, Upload, Plus, Trash2, Search, X, CheckCircle2, AlertTriangle, RefreshCw } from 'lucide-react'
+import { FileText, Upload, Plus, Trash2, Search, X, CheckCircle2, AlertTriangle, RefreshCw, Wallet } from 'lucide-react'
 import { apiClient } from '../../services/apiClient'
 import Modal from '../../components/Modal'
 
@@ -442,6 +442,14 @@ export default function FacturasPage() {
   const [showNueva,    setShowNueva]    = useState(false)
   const [toast,        setToast]        = useState(null)
   const [siiLoading,   setSiiLoading]   = useState(false)
+  const [remanente,    setRemanente]    = useState(null)
+
+  useEffect(() => {
+    console.log('[Remanente IVA] useEffect ejecutándose')
+    apiClient.get('facturas/remanente-iva')
+      .then(data => setRemanente(data))
+      .catch(err => console.error('[Remanente IVA] error:', err))
+  }, [])
 
   const years = Array.from({ length: 5 }, (_, i) => String(now.getFullYear() - i))
 
@@ -491,16 +499,22 @@ export default function FacturasPage() {
   }
 
   const sincronizarSII = async () => {
-    const periodo = `${anio}${String(mes).padStart(2, '0')}`
-    const tipo    = activeTab === 'venta' ? 'VENTA' : 'COMPRA'
+    const periodo    = `${anio}${String(mes).padStart(2, '0')}`
+    const controller = new AbortController()
+    const timeoutId  = setTimeout(() => controller.abort(), 100000)
     setSiiLoading(true)
     try {
-      const data = await apiClient.get(`sii/rcv?periodo=${periodo}&tipo=${tipo}`)
-      console.log('[SII RCV] respuesta raw (periodo:', periodo, 'tipo:', tipo, '):', data)
-      setToast({ message: `SII consultado (${periodo} · ${tipo}). Ver consola para respuesta cruda.`, type: 'success' })
+      const { guardados } = await apiClient.get(`sii/rcv?periodo=${periodo}`, controller.signal)
+      await loadData()
+      setToast({ message: `${guardados.compra} compras y ${guardados.venta} ventas sincronizadas`, type: 'success' })
     } catch (err) {
-      setToast({ message: `Error al consultar SII: ${err.message}`, type: 'error' })
+      if (err.name === 'AbortError') {
+        setToast({ message: 'Tiempo de espera agotado al conectar con el SII', type: 'error' })
+      } else {
+        setToast({ message: `Error al consultar SII: ${err.message}`, type: 'error' })
+      }
     } finally {
+      clearTimeout(timeoutId)
       setSiiLoading(false)
     }
   }
@@ -559,6 +573,29 @@ export default function FacturasPage() {
       {/* Resumen */}
       <ResumenCards resumen={resumen} loading={loading} />
 
+      {/* Remanente de IVA Acumulado */}
+      {remanente && (
+        <div className="card p-4">
+          <div className="flex items-center gap-3">
+            <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
+              remanente.periodosFaltantes?.length ? 'text-amber-600 bg-amber-100' : 'text-emerald-600 bg-emerald-100'
+            }`}>
+              <Wallet className="w-4 h-4" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-slate-500">Remanente de IVA Acumulado</p>
+              {remanente.periodosFaltantes?.length ? (
+                <p className="text-sm text-amber-700">
+                  Faltan sincronizar: {remanente.periodosFaltantes.join(', ')} — el remanente no se puede calcular con exactitud hasta completarlos
+                </p>
+              ) : (
+                <p className="text-base font-bold text-slate-800">{fmtCLP(remanente.remanenteActual)}</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Tabs */}
       <div className="flex gap-1 border-b border-slate-200">
         {[
@@ -600,10 +637,10 @@ export default function FacturasPage() {
             onClick={sincronizarSII}
             disabled={siiLoading}
             className="btn-secondary disabled:opacity-50"
-            title={`Sincronizar ${tipoLabel} desde el SII`}
+            title="Sincronizar Compras y Ventas con el SII"
           >
             <RefreshCw className={`w-4 h-4 ${siiLoading ? 'animate-spin' : ''}`} />
-            Sincronizar con SII
+            {siiLoading ? 'Sincronizando compras y ventas con el SII, puede tardar hasta 40 seg…' : 'Sincronizar con SII'}
           </button>
           <button onClick={() => setShowImport(true)} className="btn-secondary">
             <Upload className="w-4 h-4" />
